@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Threat Analyzer Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style> 
+        body { background-color: #121212; color: #ffffff; } 
+        .payload-data { font-family: 'Courier New', Courier, monospace; font-size: 0.9em; color: #00ffcc; }
+        .clickable-row { cursor: pointer; transition: 0.2s; }
+        .clickable-row:hover { background-color: #2c3034 !important; }
+        .selected-row { border-left: 4px solid #0dcaf0; background-color: #212529 !important; }
+        .text-orange { color: #fd7e14 !important; }
+        .border-orange { border-color: #fd7e14 !important; }
+    </style>
+</head>
+<body class="container mt-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3 border-secondary">
+        <h2>🛡️ AI-Enhanced SSH Threat Dashboard</h2>
+        <div class="d-flex gap-2">
+            <button onclick="clearLogs()" class="btn btn-warning text-dark fw-bold">🗑️ Clear Logs</button>
+            <button onclick="analyzeData()" class="btn btn-info fw-bold">🧠 Generate Summary</button>
+            <button onclick="generateReport()" class="btn btn-success fw-bold">📄 Archive AI Report</button>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-5">
+            <div class="card bg-dark border-secondary h-100">
+                <div class="card-body">
+                    <h5 class="card-title text-light mb-3">Live Threat Distribution</h5>
+                    <div style="height: 200px; display: flex; justify-content: center;">
+                        <canvas id="threatChartCanvas"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-7">
+            <div class="card bg-dark border-secondary h-100">
+                <div class="card-body d-flex flex-column justify-content-center">
+                    <h5 class="card-title text-light mb-3">🧠 Forensic AI Analysis</h5>
+                    <div id="aiChartInsight" class="p-3 border-start border-4 border-info bg-black rounded">
+                        Fetching analysis...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="statusAlert" class="alert alert-dark" style="display:none; transition: 0.3s;"></div>
+
+    <div class="table-responsive">
+        <table class="table table-dark table-hover border-secondary" id="threatTable">
+            <thead>
+                <tr class="table-active">
+                    <th>Timestamp</th>
+                    <th>Attacker IP</th>
+                    <th>Event Type</th>
+                    <th>Payload / Context</th>
+                    <th>AI Verdict</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for alert in alerts | reverse %}
+                <tr class="clickable-row" 
+                    data-ip="{{ alert.get('ip', 'Unknown') }}" 
+                    data-event="{{ alert.get('event', 'General') }}" 
+                    data-payload="{{ alert.get('details', '') | e }}" 
+                    data-verdict="{{ alert.get('verdict', 'INFO: General Event') }}" 
+                    data-reasoning="{{ alert.get('reasoning', 'Standard honeypot event. No AI vectoring required.') | e }}"
+                    onclick="showSpecificAnalysis(this)">
+                    
+                    <td>{{ alert.get('time', 'N/A') }}</td>
+                    <td>{{ alert.get('ip', 'N/A') }}</td>
+                    <td class="fw-bold">{{ alert.get('event', 'N/A') }}</td>
+                    <td class="payload-data">{{ alert.get('details', '') }}</td>
+                    <td class="{% if 'CRITICAL' in alert.get('verdict', '') %}text-danger fw-bold{% elif 'HIGH' in alert.get('verdict', '') %}text-warning fw-bold{% elif 'WARNING' in alert.get('verdict', '') %}text-orange fw-bold{% else %}text-info{% endif %}">
+                        {{ alert.get('verdict', 'INFO: General Event') }}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="text-center text-muted py-4">Monitoring Active. Awaiting attacker simulation...</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        let refreshTimer = setTimeout(function(){ location.reload(); }, 15000);
+        let threatChartInstance = null;
+
+        window.isRowSelected = false;
+        window.globalInsightHTML = "";
+        window.globalBorderClass = "";
+
+        function updateChartAndAnalysis() {
+            fetch('/api/chart-data')
+            .then(res => res.json())
+            .then(data => {
+                const ctx = document.getElementById('threatChartCanvas').getContext('2d');
+                if (threatChartInstance) {
+                    threatChartInstance.data.datasets[0].data = [data.counts.CRITICAL, data.counts.HIGH, data.counts.WARNING, data.counts.INFO];
+                    threatChartInstance.update();
+                } else {
+                    threatChartInstance = new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['CRITICAL', 'HIGH', 'WARNING', 'INFO'],
+                            datasets: [{
+                                data: [data.counts.CRITICAL, data.counts.HIGH, data.counts.WARNING, data.counts.INFO],
+                                backgroundColor: ['#dc3545', '#ffc107', '#fd7e14', '#0dcaf0'],
+                                borderColor: '#121212',
+                                borderWidth: 3
+                            }]
+                        },
+                        options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: 'white' } } } }
+                    });
+                }
+
+                window.globalInsightHTML = data.insight_html;
+                window.globalBorderClass = data.border_class;
+                
+                if (!window.isRowSelected) {
+                    let insightBox = document.getElementById('aiChartInsight');
+                    insightBox.innerHTML = window.globalInsightHTML;
+                    insightBox.className = `p-3 border-start border-4 bg-black rounded ${window.globalBorderClass}`;
+                }
+            });
+        }
+
+        updateChartAndAnalysis();
+
+        function showSpecificAnalysis(rowElement) {
+            clearTimeout(refreshTimer);
+            window.isRowSelected = true;
+
+            document.querySelectorAll('.clickable-row').forEach(row => row.classList.remove('selected-row'));
+            rowElement.classList.add('selected-row');
+
+            const ip = rowElement.getAttribute('data-ip') || "Unknown IP";
+            const event = rowElement.getAttribute('data-event') || "Unknown Event";
+            const payload = rowElement.getAttribute('data-payload') || "No payload recorded.";
+            const verdict = rowElement.getAttribute('data-verdict') || "INFO: General Event";
+            const reasoning = rowElement.getAttribute('data-reasoning') || "Standard honeypot event.";
+
+            let borderClass = "border-info"; let titleColor = "text-info"; let icon = "ℹ️";
+            if (verdict.includes("CRITICAL")) { borderClass = "border-danger"; titleColor = "text-danger"; icon = "🚨"; } 
+            else if (verdict.includes("HIGH")) { borderClass = "border-warning"; titleColor = "text-warning"; icon = "⚠️"; }
+
+            const detailHTML = `
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <strong class='${titleColor} fs-5'>${icon} ISOLATED EVENT ANALYSIS</strong>
+                    <button class="btn btn-sm btn-outline-secondary text-light" onclick="restoreGlobalAnalysis(event)">✖ Close View</button>
+                </div>
+                <ul class="mb-0 mt-2 text-light" style="font-size: 0.95em;">
+                    <li><strong>Target IP:</strong> ${ip}</li>
+                    <li><strong>Attack Vector:</strong> ${event}</li>
+                    <li><strong>Raw Payload:</strong> <span class="payload-data">${payload}</span></li>
+                </ul>
+                <div class="${titleColor} mt-3 border-top border-secondary pt-2" style="font-size: 0.9em;">
+                    <strong>🎯 Specific AI Verdict:</strong> ${verdict}
+                </div>
+                <div class="text-secondary mt-2" style="font-size: 0.85em; font-family: monospace;">
+                    <strong>⚙️ Model Reasoning:</strong> ${reasoning}
+                </div>
+            `;
+
+            let insightBox = document.getElementById('aiChartInsight');
+            insightBox.innerHTML = detailHTML;
+            insightBox.className = `p-3 border-start border-4 bg-black rounded ${borderClass}`;
+        }
+
+        function restoreGlobalAnalysis(e) {
+            if(e) e.stopPropagation();
+            window.isRowSelected = false;
+            document.querySelectorAll('.clickable-row').forEach(row => row.classList.remove('selected-row'));
+            let insightBox = document.getElementById('aiChartInsight');
+            insightBox.innerHTML = window.globalInsightHTML;
+            insightBox.className = `p-3 border-start border-4 bg-black rounded ${window.globalBorderClass}`;
+            refreshTimer = setTimeout(function(){ location.reload(); }, 15000); 
+        }
+
+        function clearLogs() {
+            if(confirm("Clear database for a new simulation?")) {
+                clearTimeout(refreshTimer);
+                fetch('/api/clear', { method: 'POST' }).then(() => location.reload());
+            }
+        }
+
+        function analyzeData() {
+            clearTimeout(refreshTimer);
+            fetch('/api/analyze')
+            .then(res => res.json())
+            .then(data => {
+                let alertBox = document.getElementById('statusAlert');
+                alertBox.style.display = 'block';
+                alertBox.innerHTML = `<strong>🧠 Summary Report:</strong> Processed ${data.total_attacks} events. <span class="text-danger fw-bold">${data.critical_threats} CRITICAL.</span>`;
+                alertBox.className = "alert alert-info";
+                setTimeout(() => { location.reload(); }, 6000);
+            });
+        }
+
+        function generateReport() {
+            clearTimeout(refreshTimer); 
+            let alertBox = document.getElementById('statusAlert');
+            alertBox.style.display = 'block';
+            alertBox.innerHTML = `<strong>⏳ Generating...</strong> Compiling forensic report.`;
+            alertBox.className = "alert alert-warning";
+
+            fetch('/api/export-report')
+            .then(res => res.json())
+            .then(data => {
+                alertBox.innerHTML = `<strong>✅ Archiving Complete:</strong> ${data.message}`;
+                alertBox.className = "alert alert-success";
+                setTimeout(() => { refreshTimer = setTimeout(function(){ location.reload(); }, 3000); alertBox.style.display = 'none'; }, 5000);
+            });
+        }
+    </script>
+</body>
+</html>
