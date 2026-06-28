@@ -392,31 +392,178 @@ def chart():
 @app.route('/api/export-report')
 def export():
     db = get_db()
+
+    # PDF setup
     pdf = FPDF()
-    pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
 
-    def add_line(txt, style='', size=10, align='L'):
-        pdf.set_font("Courier", style=style, size=size)
-        clean = txt.encode('ascii', 'ignore').decode('ascii')
-        pdf.multi_cell(0, 6, clean, align=align)
+    # Set global font
+    pdf.set_font("Helvetica", size=10)
 
-    add_line("=" * 60, style='B')
-    add_line("CYBERSENTINEL FORENSIC REPORT", style='B', size=12, align='C')
-    add_line("=" * 60)
-    add_line(f"Generated: {datetime.datetime.now(MYT).strftime('%Y-%m-%d %H:%M:%S')} (MYT)")
-    add_line("")
+    # -----------------------------------------------------------------
+    # HEADER
+    # -----------------------------------------------------------------
+    pdf.set_font("Helvetica", 'B', 18)
+    pdf.set_text_color(0, 51, 102)  # Dark blue
+    pdf.cell(0, 10, "CYBERSENTINEL FORENSIC REPORT", ln=True, align='C')
+    pdf.set_font("Helvetica", 'I', 12)
+    pdf.set_text_color(100, 100, 100)  # Gray
+    pdf.cell(0, 6, "AI-Enhanced Threat Intelligence", ln=True, align='C')
+    pdf.ln(4)
+    pdf.set_draw_color(0, 51, 102)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(6)
+
+    # -----------------------------------------------------------------
+    # DATE & SUMMARY STATS
+    # -----------------------------------------------------------------
+    pdf.set_font("Helvetica", size=10)
+    pdf.set_text_color(0, 0, 0)
+    pdf.cell(0, 6, f"Generated: {datetime.datetime.now(MYT).strftime('%Y-%m-%d %H:%M:%S')} (MYT)", ln=True)
+
+    # Summary stats
+    total = len(db)
+    critical = sum(1 for a in db if "CRITICAL" in a.get('verdict', ''))
+    high = sum(1 for a in db if "HIGH" in a.get('verdict', ''))
+    warning = sum(1 for a in db if "WARNING" in a.get('verdict', ''))
+    info = total - critical - high - warning
+
+    pdf.ln(4)
+    pdf.set_font("Helvetica", 'B', 11)
+    pdf.set_text_color(0, 51, 102)
+    pdf.cell(0, 6, "Summary", ln=True)
+    pdf.set_font("Helvetica", size=10)
+    pdf.set_text_color(0, 0, 0)
+
+    # Create a small stats table with two columns
+    stats_data = [
+        ("Total Events", total),
+        ("Critical", critical),
+        ("High", high),
+        ("Warning", warning),
+        ("Info", info)
+    ]
+    # Use a simple layout with labels and values
+    for label, value in stats_data:
+        pdf.set_font("Helvetica", 'B', 10)
+        pdf.cell(40, 6, label + ":", border=0)
+        pdf.set_font("Helvetica", size=10)
+        pdf.cell(20, 6, str(value), border=0, ln=True)
+
+    pdf.ln(6)
+    pdf.set_draw_color(200, 200, 200)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(4)
+
+    # -----------------------------------------------------------------
+    # EVENT LOG (if any)
+    # -----------------------------------------------------------------
     if not db:
-        add_line("No events.")
+        pdf.set_font("Helvetica", 'I', 12)
+        pdf.set_text_color(150, 150, 150)
+        pdf.cell(0, 10, "No events recorded.", ln=True)
     else:
-        for i, a in enumerate(db, 1):
-            ip = a.get('ip', 'Unknown')
-            add_line(f"{i}. [{a['time']}] {ip} -> {a.get('target_ip', 'N/A')}")
-            add_line(f"   Event: {a['event']}")
-            add_line(f"   Payload: {a['details'][:100]}")
-            add_line(f"   Verdict: {a['verdict']}")
-            add_line(f"   Explanation: {a.get('simple_explanation', 'N/A')}")
-            add_line("   ---")
+        # Loop through events with alternating background
+        for idx, a in enumerate(db, 1):
+            # Alternating row color (very light gray)
+            if idx % 2 == 0:
+                pdf.set_fill_color(240, 240, 240)
+            else:
+                pdf.set_fill_color(255, 255, 255)
+
+            # Start a block
+            pdf.set_font("Helvetica", 'B', 10)
+            pdf.set_text_color(0, 0, 0)
+            pdf.cell(0, 6, f"Event #{idx}", ln=True, fill=True)
+
+            # Details
+            pdf.set_font("Helvetica", 'B', 9)
+            pdf.set_text_color(80, 80, 80)
+            pdf.cell(30, 5, "Timestamp:", border=0, fill=True)
+            pdf.set_font("Helvetica", size=9)
+            pdf.set_text_color(0, 0, 0)
+            pdf.cell(0, 5, a.get('time', ''), ln=True, fill=True)
+
+            pdf.set_font("Helvetica", 'B', 9)
+            pdf.set_text_color(80, 80, 80)
+            pdf.cell(30, 5, "Attacker IP:", border=0, fill=True)
+            pdf.set_font("Helvetica", size=9)
+            pdf.set_text_color(0, 0, 0)
+            pdf.cell(0, 5, a.get('ip', 'Unknown'), ln=True, fill=True)
+
+            pdf.set_font("Helvetica", 'B', 9)
+            pdf.set_text_color(80, 80, 80)
+            pdf.cell(30, 5, "Target IP:", border=0, fill=True)
+            pdf.set_font("Helvetica", size=9)
+            pdf.set_text_color(0, 0, 0)
+            pdf.cell(0, 5, a.get('target_ip', 'N/A'), ln=True, fill=True)
+
+            pdf.set_font("Helvetica", 'B', 9)
+            pdf.set_text_color(80, 80, 80)
+            pdf.cell(30, 5, "Event:", border=0, fill=True)
+            pdf.set_font("Helvetica", size=9)
+            pdf.set_text_color(0, 0, 0)
+            pdf.cell(0, 5, a.get('event', ''), ln=True, fill=True)
+
+            pdf.set_font("Helvetica", 'B', 9)
+            pdf.set_text_color(80, 80, 80)
+            pdf.cell(30, 5, "Payload:", border=0, fill=True)
+            pdf.set_font("Helvetica", size=9)
+            pdf.set_text_color(0, 0, 0)
+            # Truncate if too long
+            payload = a.get('details', '')[:100]
+            pdf.cell(0, 5, payload, ln=True, fill=True)
+
+            pdf.set_font("Helvetica", 'B', 9)
+            pdf.set_text_color(80, 80, 80)
+            pdf.cell(30, 5, "Verdict:", border=0, fill=True)
+            # Color code based on severity
+            verdict_text = a.get('verdict', '')
+            if "CRITICAL" in verdict_text:
+                pdf.set_text_color(200, 0, 0)
+            elif "HIGH" in verdict_text:
+                pdf.set_text_color(200, 100, 0)
+            elif "WARNING" in verdict_text:
+                pdf.set_text_color(200, 200, 0)
+            else:
+                pdf.set_text_color(0, 0, 0)
+            pdf.set_font("Helvetica", 'B', 9)
+            pdf.cell(0, 5, verdict_text, ln=True, fill=True)
+
+            pdf.set_text_color(0, 0, 0)
+
+            # Explanation – multi-line
+            explanation = a.get('simple_explanation', 'No explanation available.')
+            # Clean non-Latin-1 characters
+            try:
+                explanation = explanation.encode('latin-1', 'ignore').decode('latin-1')
+            except:
+                explanation = "Explanation unavailable."
+            pdf.set_font("Helvetica", 'B', 9)
+            pdf.set_text_color(80, 80, 80)
+            pdf.cell(30, 5, "Explanation:", border=0, fill=True)
+            pdf.set_font("Helvetica", size=9)
+            pdf.set_text_color(0, 0, 0)
+            pdf.multi_cell(0, 5, explanation, fill=True)
+
+            pdf.ln(2)
+            pdf.set_draw_color(200, 200, 200)
+            pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+            pdf.ln(2)
+
+    # -----------------------------------------------------------------
+    # FOOTER (page numbers) – handled by auto_page_break
+    # We'll add a footer on each page using a custom method
+    # but simpler: add a final line with page number
+    # Actually we can override the footer method, but we'll do a quick inline after events
+    pdf.ln(10)
+    pdf.set_y(-15)
+    pdf.set_font("Helvetica", 'I', 8)
+    pdf.set_text_color(150, 150, 150)
+    pdf.cell(0, 10, f"Page {pdf.page_no()}", align='C')
+
+    # Output
     filename = f"Report_{datetime.datetime.now(MYT).strftime('%Y%m%d_%H%M%S')}.pdf"
     path = os.path.join(REPORT_FOLDER, filename)
     pdf.output(path)
