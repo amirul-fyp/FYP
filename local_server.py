@@ -103,16 +103,18 @@ else:
 
 print("=" * 60)
 
-# --- GENERATIVE AI EXPLANATION (Hugging Face Free Inference) ---
+# --- GENERATIVE AI EXPLANATION (Groq) ---
 def generate_ai_explanation(command, classification, confidence, risk_flags, entropy_score):
-    """Use Hugging Face free inference API to generate plain‑English explanation."""
-    api_key = os.getenv('HF_API_TOKEN')
+    """
+    Use Groq's free API to generate a plain‑English explanation.
+    Falls back to static if the API call fails.
+    """
+    api_key = os.getenv('GROQ_API_KEY')
     if not api_key:
         return None
 
-    # Format prompt for Mistral‑7B Instruct
+    # Build a clear prompt
     prompt = f"""
-<|user|>
 You are a cybersecurity explainer. Explain this threat in simple, plain English.
 
 Command: "{command}"
@@ -124,44 +126,39 @@ Complexity score: {entropy_score}
 Write a 2‑3 sentence explanation that a non‑technical person can understand.
 Be friendly, use analogies if helpful, and do not include technical jargon.
 Only return the explanation text.
-<|assistant|>
 """
 
     try:
-        API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-base"
-        headers = {"Authorization": f"Bearer {api_key}"}
-        payload = {
-            "inputs": prompt,
-            "parameters": {
-                "max_new_tokens": 150,
-                "temperature": 0.7,
-                "return_full_text": False
-            }
+        # Groq uses OpenAI-compatible endpoint
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
         }
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=10)
-        
+        payload = {
+            "model": "llama3-8b-8192",   # Free and fast
+            "messages": [
+                {"role": "system", "content": "You are a helpful cybersecurity assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            "max_tokens": 150,
+            "temperature": 0.7
+        }
+        response = requests.post(url, headers=headers, json=payload, timeout=15)
         if response.status_code == 200:
             result = response.json()
-            # Hugging Face returns a list with generated text
-            if isinstance(result, list) and len(result) > 0:
-                explanation = result[0].get('generated_text', '').strip()
-                # If the response starts with the prompt, strip it off
-                if explanation.startswith("<|assistant|>"):
-                    explanation = explanation.replace("<|assistant|>", "").strip()
-                if len(explanation) > 300:
-                    explanation = explanation[:297] + "..."
-                return explanation
-            else:
-                print(f"⚠️ Unexpected Hugging Face response format: {result}")
-                return None
+            explanation = result['choices'][0]['message']['content'].strip()
+            if len(explanation) > 300:
+                explanation = explanation[:297] + "..."
+            return explanation
         else:
-            print(f"⚠️ Hugging Face API error: {response.status_code} - {response.text}")
+            print(f"⚠️ Groq API error: {response.status_code} - {response.text}")
             return None
     except requests.exceptions.Timeout:
-        print("⚠️ Hugging Face API timeout – using fallback.")
+        print("⚠️ Groq API timeout – using fallback.")
         return None
     except Exception as e:
-        print(f"⚠️ Hugging Face error: {e}")
+        print(f"⚠️ Groq error: {e}")
         return None
 
 # --- STATIC FALLBACK EXPLANATION ---
@@ -245,7 +242,7 @@ def process_command(command_input):
 
         anchors = ", ".join([f"'{w}'" for w in top_words]) if top_words else "none"
 
-        # Try generative AI first
+        # Try Groq AI first
         ai_explanation = generate_ai_explanation(command_input, best, best_prob, flags, entropy)
         if ai_explanation:
             explanation = ai_explanation
@@ -436,11 +433,10 @@ def health():
         "model_files_exist": os.path.exists(model_path) and os.path.exists(rf_path),
         "load_error": model_load_error,
         "database_size": len(get_db()),
-        "hf_available": bool(os.getenv('HF_API_TOKEN'))
+        "groq_available": bool(os.getenv('GROQ_API_KEY'))
     })
 
 # --- RENDER COMPATIBILITY ---
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    # Trigger rebuild – this comment is safe here
     app.run(host='0.0.0.0', port=port, debug=False)
