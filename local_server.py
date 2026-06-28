@@ -113,7 +113,6 @@ def generate_ai_explanation(command, classification, confidence, risk_flags, ent
     if not api_key:
         return None
 
-    # Build a clear prompt
     prompt = f"""
 You are a cybersecurity explainer. Explain this threat in simple, plain English.
 
@@ -129,14 +128,13 @@ Only return the explanation text.
 """
 
     try:
-        # Groq uses OpenAI-compatible endpoint
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "llama-3.1-8b-instant",   # Free and fast
+            "model": "llama-3.1-8b-instant",  # ✅ Updated model
             "messages": [
                 {"role": "system", "content": "You are a helpful cybersecurity assistant."},
                 {"role": "user", "content": prompt}
