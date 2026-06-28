@@ -11,14 +11,7 @@ import numpy as np
 import pickle
 import warnings
 import traceback
-
-# OpenAI (optional – only if API key is set)
-try:
-    import openai
-    OPENAI_AVAILABLE = True
-except ImportError:
-    OPENAI_AVAILABLE = False
-    openai = None
+import requests
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -110,16 +103,17 @@ else:
 
 print("=" * 60)
 
-# --- GENERATIVE AI EXPLANATION (OpenAI) ---
+# --- GENERATIVE AI EXPLANATION (Hugging Face Free Inference) ---
 def generate_ai_explanation(command, classification, confidence, risk_flags, entropy_score):
-    """Use OpenAI to generate a friendly, plain‑English explanation."""
-    if not OPENAI_AVAILABLE or not os.getenv('OPENAI_API_KEY'):
+    """Use Hugging Face free inference API to generate plain‑English explanation."""
+    api_key = os.getenv('HF_API_TOKEN')
+    if not api_key:
         return None
 
-    try:
-        client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-        prompt = f"""
-You are a cybersecurity explainer. Explain this threat in simple, plain English:
+    # Format prompt for Mistral‑7B Instruct
+    prompt = f"""
+<|user|>
+You are a cybersecurity explainer. Explain this threat in simple, plain English.
 
 Command: "{command}"
 Threat type: {classification}
@@ -127,25 +121,47 @@ Confidence: {confidence}%
 Risk flags: {risk_flags}
 Complexity score: {entropy_score}
 
-Write a 2‑3 sentence explanation that a non‑technical person can understand. 
+Write a 2‑3 sentence explanation that a non‑technical person can understand.
 Be friendly, use analogies if helpful, and do not include technical jargon.
 Only return the explanation text.
+<|assistant|>
 """
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",  # or "gpt-3.5-turbo" – both work well
-            messages=[
-                {"role": "system", "content": "You are a helpful cybersecurity assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=120,
-            temperature=0.7
-        )
-        explanation = response.choices[0].message.content.strip()
-        if len(explanation) > 300:
-            explanation = explanation[:297] + "..."
-        return explanation
+
+    try:
+        API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
+        headers = {"Authorization": f"Bearer {api_key}"}
+        payload = {
+            "inputs": prompt,
+            "parameters": {
+                "max_new_tokens": 150,
+                "temperature": 0.7,
+                "return_full_text": False
+            }
+        }
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=10)
+        
+        if response.status_code == 200:
+            result = response.json()
+            # Hugging Face returns a list with generated text
+            if isinstance(result, list) and len(result) > 0:
+                explanation = result[0].get('generated_text', '').strip()
+                # If the response starts with the prompt, strip it off
+                if explanation.startswith("<|assistant|>"):
+                    explanation = explanation.replace("<|assistant|>", "").strip()
+                if len(explanation) > 300:
+                    explanation = explanation[:297] + "..."
+                return explanation
+            else:
+                print(f"⚠️ Unexpected Hugging Face response format: {result}")
+                return None
+        else:
+            print(f"⚠️ Hugging Face API error: {response.status_code} - {response.text}")
+            return None
+    except requests.exceptions.Timeout:
+        print("⚠️ Hugging Face API timeout – using fallback.")
+        return None
     except Exception as e:
-        print(f"⚠️ OpenAI error: {e}")
+        print(f"⚠️ Hugging Face error: {e}")
         return None
 
 # --- STATIC FALLBACK EXPLANATION ---
@@ -420,7 +436,7 @@ def health():
         "model_files_exist": os.path.exists(model_path) and os.path.exists(rf_path),
         "load_error": model_load_error,
         "database_size": len(get_db()),
-        "openai_available": OPENAI_AVAILABLE and bool(os.getenv('OPENAI_API_KEY'))
+        "hf_available": bool(os.getenv('HF_API_TOKEN'))
     })
 
 # --- RENDER COMPATIBILITY ---
