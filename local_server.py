@@ -8,16 +8,12 @@ import json
 from fpdf import FPDF
 import joblib
 import numpy as np
-import io
-import warnings
 import pickle
+import warnings
+import traceback
 
-import google.generativeai as genai
-
-# ==========================================
-# 🛑 PUT YOUR GOOGLE AI API KEY HERE 🛑
-# ==========================================
-genai.configure(api_key="AQ.Ab8RN6LybSnZjOhTbCXJjWzNBeiirEeHDXQw7vIPOnmyJoXndA")
+# Suppress warnings (e.g., scikit-learn version mismatches)
+warnings.filterwarnings("ignore")
 
 # Lock the server to Malaysian Time (UTC+8)
 MYT = datetime.timezone(datetime.timedelta(hours=8))
@@ -32,225 +28,252 @@ DB_FILE = os.path.join(BASE_DIR, "attack_database.json")
 if not os.path.exists(REPORT_FOLDER):
     os.makedirs(REPORT_FOLDER)
 
-# --- CLOUD DATABASE HELPER FUNCTIONS ---
+# --- DATABASE HELPERS ---
 def get_db():
     if os.path.exists(DB_FILE):
         try:
             with open(DB_FILE, 'r') as f:
                 return json.load(f)
-        except Exception:
+        except Exception as e:
+            print(f"⚠️ Database read error: {e}")
             return []
     return []
 
 def save_db(data):
-    with open(DB_FILE, 'w') as f:
-        json.dump(data, f, indent=4)
+    try:
+        with open(DB_FILE, 'w') as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        print(f"⚠️ Database write error: {e}")
 
 # --- LOAD THE MACHINE LEARNING MODEL ---
-# --- LOAD THE MACHINE LEARNING MODEL ---
-ml_error_message = "Unknown Error"
+print("=" * 60)
+print("🚀 Starting CyberSentinel Server...")
+print("=" * 60)
+
 vectorizer = None
 rf_model = None
+model_load_error = None
+
+model_path = os.path.join(BASE_DIR, "text_translator.pkl")
+rf_path = os.path.join(BASE_DIR, "random_forest_model.pkl")
 
 try:
-    print("🧠 Waking up Random Forest AI...")
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        vectorizer = joblib.load(os.path.join(BASE_DIR, "text_translator.pkl"))
-        rf_model = joblib.load(os.path.join(BASE_DIR, "random_forest_model.pkl"))
-    print("✅ AI Loaded Successfully!")
-    ml_error_message = None
-except ModuleNotFoundError as e:
-    if "numpy._core" in str(e):
-        print("⚠️ NumPy version mismatch. Attempting pickle fallback...")
-        try:
-            import pickle
-            with open(os.path.join(BASE_DIR, "text_translator.pkl"), 'rb') as f:
-                vectorizer = pickle.load(f)
-            with open(os.path.join(BASE_DIR, "random_forest_model.pkl"), 'rb') as f:
-                rf_model = pickle.load(f)
-            print("✅ Loaded with pickle fallback!")
-            ml_error_message = None
-        except Exception as p_e:
-            ml_error_message = f"Pickle fallback also failed: {p_e}"
-            vectorizer = None
-            rf_model = None
-    else:
-        ml_error_message = str(e)
-        vectorizer = None
-        rf_model = None
-except Exception as e:
-    ml_error_message = str(e)
-    print(f"❌ AI Loading Failed. Error: {ml_error_message}")
-    vectorizer = None
-    rf_model = None
+    import sklearn
+    print(f"📦 scikit-learn version: {sklearn.__version__}")
+except ImportError:
+    print("❌ scikit-learn is not installed.")
+    model_load_error = "scikit-learn missing"
 
-# --- AI-DRIVEN FORENSIC ENGINE ---
+if os.path.exists(model_path) and os.path.exists(rf_path):
+    try:
+        # Try joblib first
+        print("🧠 Loading with joblib...")
+        vectorizer = joblib.load(model_path)
+        rf_model = joblib.load(rf_path)
+        print("✅ Loaded successfully with joblib.")
+    except ModuleNotFoundError as e:
+        if "numpy._core" in str(e):
+            print("⚠️ NumPy version mismatch. Trying pickle fallback...")
+            try:
+                with open(model_path, 'rb') as f:
+                    vectorizer = pickle.load(f)
+                with open(rf_path, 'rb') as f:
+                    rf_model = pickle.load(f)
+                print("✅ Loaded with pickle fallback!")
+            except Exception as p_e:
+                model_load_error = f"Pickle failed: {p_e}"
+                print(f"❌ {model_load_error}")
+        else:
+            model_load_error = str(e)
+            print(f"❌ Joblib error: {model_load_error}")
+    except Exception as e:
+        model_load_error = str(e)
+        print(f"❌ General load error: {model_load_error}")
+else:
+    model_load_error = "Model files not found. Please upload random_forest_model.pkl and text_translator.pkl"
+    print(f"❌ {model_load_error}")
+
+if vectorizer is not None and rf_model is not None:
+    print("✅ Random Forest AI is ready!")
+    if hasattr(rf_model, 'classes_'):
+        print(f"📊 Classes: {rf_model.classes_}")
+else:
+    print("⚠️ Running in offline mode without AI detection.")
+
+print("=" * 60)
+
+# --- FALLBACK EXPLANATION GENERATOR (no generative AI) ---
+def generate_explanation(classification, risk_flags, entropy_score):
+    explanations = {
+        "Cryptojacking": "🚨 This looks like someone trying to use your computer to mine cryptocurrency without permission. It's like someone secretly using your electricity to run their Bitcoin machine!",
+        "Persistence": "🔐 This seems like someone trying to install a hidden backdoor to keep accessing your system later. Think of it as someone leaving a spare key under the mat.",
+        "Reconnaissance": "🔍 This appears to be an attacker checking out your system, like a burglar casing a house before breaking in.",
+        "Routine Noise": "✅ This looks like normal system activity. It's like background noise in a busy office.",
+        "Unknown": "⚠️ Unusual activity detected on your system. Further investigation may be needed."
+    }
+    base = explanations.get(classification, explanations["Unknown"])
+    if risk_flags:
+        risk_text = " and ".join(risk_flags) if len(risk_flags) > 1 else risk_flags[0]
+        base += f" The specific risky commands detected were: {risk_text}."
+    if entropy_score > 0.65:
+        base += " The command looks complex and obfuscated, which is often a sign of malicious intent."
+    return base
+
+# --- CORE PROCESSING FUNCTION ---
 def process_command(command_input):
-    stages = []
-
-    clean_input = re.sub(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', 'IP_ADDRESS', command_input)
-
-    # Check if AI models are loaded (Outputs the specific error to the dashboard)
+    clean = re.sub(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', 'IP_ADDRESS', command_input)
     if vectorizer is None or rf_model is None:
         return [{
             "event": "AI Offline",
             "details": command_input,
             "verdict": "INFO: AI Offline",
-            "reasoning": f"ML Model Load Failure: {ml_error_message}",
-            "advanced": "N/A"
+            "reasoning": f"ML model not loaded: {model_load_error}",
+            "advanced": "N/A",
+            "simple_explanation": "⚠️ AI detection is offline. Please check server logs."
         }]
-
     try:
-        math_features = vectorizer.transform([clean_input])
-        probabilities = rf_model.predict_proba(math_features)[0]
+        # Transform and predict
+        features = vectorizer.transform([clean])
+        proba = rf_model.predict_proba(features)[0]
         classes = rf_model.classes_
-
         if len(classes) == 1:
-            best_class = classes[0]
+            best = classes[0]
             best_prob = 100.0
-            second_class = classes[0]
+            second = classes[0]
             second_prob = 0.0
         else:
-            sorted_indices = np.argsort(probabilities)[::-1]
-            best_class = classes[sorted_indices[0]]
-            best_prob = probabilities[sorted_indices[0]] * 100
-            second_class = classes[sorted_indices[1]]
-            second_prob = probabilities[sorted_indices[1]] * 100
+            idx = np.argsort(proba)[::-1]
+            best = classes[idx[0]]
+            best_prob = proba[idx[0]] * 100
+            second = classes[idx[1]]
+            second_prob = proba[idx[1]] * 100
 
+        # Feature importance
         feature_names = vectorizer.get_feature_names_out()
-        weights = math_features.toarray()[0]
-        important_indices = weights.argsort()[-3:][::-1]
-        influential_words = [feature_names[i] for i in important_indices if weights[i] > 0]
+        weights = features.toarray()[0]
+        top_idx = weights.argsort()[-3:][::-1]
+        top_words = [feature_names[i] for i in top_idx if weights[i] > 0]
 
-        # PLAIN ENGLISH ENTROPY EXPLANATION
-        entropy = 0
+        # Entropy
+        entropy = 0.0
         entropy_status = "Standard"
-        entropy_desc = "Reads like normal, typed human commands."
-        if len(clean_input) > 1:
-            for x in set(clean_input):
-                p_x = float(clean_input.count(x)) / len(clean_input)
-                entropy += -p_x * math.log(p_x, 2)
-            max_entropy = math.log(min(len(clean_input), 256), 2)
-            normalized = entropy / max_entropy if max_entropy > 0 else 0
-
-            if normalized > 0.80 and len(clean_input) > 12:
+        if len(clean) > 1:
+            for ch in set(clean):
+                p = clean.count(ch) / len(clean)
+                entropy -= p * math.log(p, 2)
+            max_ent = math.log(min(len(clean), 256), 2)
+            norm = entropy / max_ent if max_ent > 0 else 0
+            if norm > 0.80 and len(clean) > 12:
                 entropy_status = "High Risk"
-                entropy_desc = "Looks heavily scrambled, encoded, or obfuscated (e.g., Base64)."
-            elif normalized > 0.65:
+            elif norm > 0.65:
                 entropy_status = "Elevated"
-                entropy_desc = "Contains complex syntax, often used in automated scripts."
         entropy = round(entropy, 2)
 
-        high_risk_keywords = ['curl', 'wget', 'bash', 'sh', 'chmod', 'nc -e', 'crontab']
-        risk_flags = [kw for kw in high_risk_keywords if kw in command_input.lower()]
-
+        risk_keywords = ['curl', 'wget', 'bash', 'sh', 'chmod', 'nc -e', 'crontab']
+        flags = [kw for kw in risk_keywords if kw in command_input.lower()]
         if 'wget' in command_input.lower() or 'curl' in command_input.lower():
-            best_class = "Cryptojacking"
+            best = "Cryptojacking"
 
-        narrative_map = {
-            "Cryptojacking": ("CRITICAL", "High-resource consumption detected. Potential for unauthorized pool connection and crypto-mining execution."),
-            "Persistence": ("HIGH", "Attempt to modify system state for long-term access. Investigating potential backdoor installation."),
-            "Reconnaissance": ("WARNING", "Information gathering detected. Attacker is mapping file system architecture and user environment."),
-            "Routine Noise": ("INFO", "Standard system operation. No indicators of compromise detected.")
+        map_sev = {
+            "Cryptojacking": ("CRITICAL", "High-resource consumption detected."),
+            "Persistence": ("HIGH", "Potential backdoor installation detected."),
+            "Reconnaissance": ("WARNING", "Information gathering detected."),
+            "Routine Noise": ("INFO", "Standard system operation.")
         }
+        severity, insight = map_sev.get(best, ("INFO", "Uncategorized."))
+        verdict = f"{severity}: AI Detected {best}"
 
-        severity, insight = narrative_map.get(best_class, ("INFO", "Uncategorized command execution."))
-        verdict = f"{severity}: AI Detected {best_class}"
+        anchors = ", ".join([f"'{w}'" for w in top_words]) if top_words else "none"
+        simple = generate_explanation(best, flags, entropy)
 
-        anchors = ", ".join([f"'{w}'" for w in influential_words]) if influential_words else "none"
-
-        ai_reasoning = (
-            f"🎯 <b>Confidence Score:</b> {best_prob:.1f}% certainty.|"
-            f"🔑 <b>Key Triggers:</b> The AI flagged these specific words: [{anchors}].|"
-            f"💡 <b>Analyst Insight:</b> {insight}"
+        reasoning = (
+            f"🎯 <b>Confidence:</b> {best_prob:.1f}%|"
+            f"🔑 <b>Key Triggers:</b> [{anchors}]|"
+            f"💡 <b>Insight:</b> {insight}"
+        )
+        advanced = (
+            f"📊 <b>Confidence:</b> {best_prob:.1f}%|"
+            f"⚠️ <b>Risk Flags:</b> {', '.join(flags) if flags else 'None'}|"
+            f"🔍 <b>Entropy:</b> {entropy_status} ({entropy})"
         )
 
-        risk_flags_str = ', '.join(risk_flags) if risk_flags else 'No manual risk keywords found.'
-        advanced_analysis = (
-            f"🤖 <b>Alternative Guess:</b> {second_prob:.1f}% chance this is actually '{second_class}'.|"
-            f"🚩 <b>Hardcoded Rules:</b> {risk_flags_str}|"
-            f"🕵️ <b>Obfuscation Check:</b> {entropy_status} (Score {entropy}). {entropy_desc}"
-        )
-
-        stages.append({
+        return [{
             "event": "AI Analyzed Command",
             "details": command_input,
             "verdict": verdict,
-            "reasoning": ai_reasoning,
-            "advanced": advanced_analysis
-        })
-
+            "reasoning": reasoning,
+            "advanced": advanced,
+            "simple_explanation": simple
+        }]
     except Exception as e:
-        print(f"⚠️ Error in AI processing: {e}")
-        stages.append({
+        print(f"⚠️ Processing error: {e}")
+        traceback.print_exc()
+        return [{
             "event": "AI Processing Error",
             "details": command_input,
             "verdict": "INFO: AI Error",
-            "reasoning": f"Error occurred: {str(e)}",
-            "advanced": "N/A"
-        })
-
-    return stages
+            "reasoning": f"Error: {str(e)}",
+            "advanced": "N/A",
+            "simple_explanation": f"⚠️ Processing error: {str(e)}"
+        }]
 
 # --- FLASK ROUTES ---
 @app.route('/')
 def index():
-    attack_database = get_db()
-    return render_template('dashboard.html', alerts=attack_database)
+    db = get_db()
+    try:
+        return render_template('dashboard.html', alerts=db)
+    except Exception as e:
+        return "Dashboard template not found. Please create templates/dashboard.html", 404
 
 @app.route('/api/logs', methods=['POST'])
 def receive_logs():
-    log_data = request.json
-    attack_database = get_db()
-
-    src_ip = log_data.get("attacker_ip", log_data.get("src_ip", "Unknown IP"))
-    if not src_ip or str(src_ip).strip() == "":
-        src_ip = "Unknown IP"
-
-    target_ip = log_data.get("target_ip", "Unknown Target IP")
-    if isinstance(target_ip, list) and len(target_ip) > 0:
+    data = request.json
+    db = get_db()
+    src_ip = data.get("attacker_ip", data.get("src_ip", "Unknown IP"))
+    target_ip = data.get("target_ip", "Unknown Target IP")
+    if isinstance(target_ip, list) and target_ip:
         target_ip = target_ip[0]
 
-    if "command" in log_data:
+    if "command" in data:
         event_type = "cowrie.command.input"
-        command_input = log_data.get("command", "")
+        command = data.get("command", "")
     else:
-        event_type = log_data.get("eventid", "unknown")
-        command_input = log_data.get("input", "")
+        event_type = data.get("eventid", "unknown")
+        command = data.get("input", "")
 
-    if log_data.get("is_encoded"):
+    if data.get("is_encoded"):
         try:
-            command_input = base64.b64decode(command_input.encode('utf-8')).decode('utf-8')
+            command = base64.b64decode(command.encode()).decode()
         except Exception as e:
-            print(f"⚠️ Base64 Decode Error: {e}")
+            print(f"⚠️ Base64 decode error: {e}")
 
     if event_type == "cowrie.command.input":
-        stages = process_command(command_input)
-        for stage in stages:
-            attack_database.append({
+        stages = process_command(command)
+        for s in stages:
+            db.append({
                 "time": datetime.datetime.now(MYT).strftime("%Y-%m-%d %H:%M:%S"),
                 "ip": src_ip,
                 "attacker_ip": src_ip,
                 "target_ip": target_ip,
-                "event": stage['event'],
-                "details": stage['details'],
-                "verdict": stage['verdict'],
-                "reasoning": stage.get('reasoning', "Model reasoning unavailable."),
-                "advanced": stage.get('advanced', "N/A")
+                "event": s['event'],
+                "details": s['details'],
+                "verdict": s['verdict'],
+                "reasoning": s.get('reasoning', ''),
+                "advanced": s.get('advanced', ''),
+                "simple_explanation": s.get('simple_explanation', '')
             })
     else:
-        details = str(log_data.get("message", "N/A"))
+        details = str(data.get("message", "N/A"))
         verdict = "INFO: General Event"
-
         if event_type == "cowrie.login.failed":
-            details = f"User: {log_data.get('username')} | Pass: {log_data.get('password')}"
+            details = f"User: {data.get('username')} | Pass: {data.get('password')}"
             verdict = "HIGH: SSH Brute Force Attempt"
         elif event_type == "cowrie.session.file_download":
-            details = log_data.get("url", "Unknown URL")
+            details = data.get("url", "Unknown URL")
             verdict = "CRITICAL: Malware Source Download"
-
-        attack_database.append({
+        db.append({
             "time": datetime.datetime.now(MYT).strftime("%Y-%m-%d %H:%M:%S"),
             "ip": src_ip,
             "attacker_ip": src_ip,
@@ -258,107 +281,100 @@ def receive_logs():
             "event": event_type,
             "details": details,
             "verdict": verdict,
-            "reasoning": "Standard honeypot event. No AI vectoring required.",
-            "advanced": "N/A"
+            "reasoning": "Standard event.",
+            "advanced": "N/A",
+            "simple_explanation": "General system event."
         })
-
-    save_db(attack_database)
+    save_db(db)
     return jsonify({"status": "received"}), 200
 
-@app.route('/api/analyze', methods=['GET'])
-def analyze_threats():
-    attack_database = get_db()
-    total = len(attack_database)
-    critical = sum(1 for attack in attack_database if "CRITICAL" in attack['verdict'])
+@app.route('/api/analyze')
+def analyze():
+    db = get_db()
+    total = len(db)
+    critical = sum(1 for a in db if "CRITICAL" in a.get('verdict', ''))
     return jsonify({"total_attacks": total, "critical_threats": critical})
 
 @app.route('/api/clear', methods=['POST'])
-def clear_logs():
+def clear():
     save_db([])
-    return jsonify({"status": "success", "message": "Database cleared successfully."})
+    return jsonify({"status": "success"})
 
-@app.route('/api/chart-data', methods=['GET'])
-def get_chart_data():
-    attack_database = get_db()
+@app.route('/api/chart-data')
+def chart():
+    db = get_db()
     counts = {"CRITICAL": 0, "HIGH": 0, "WARNING": 0, "INFO": 0}
-    attacker_ips = set()
-
-    for attack in attack_database:
-        verdict = attack.get('verdict', 'INFO: General Event')
-        ip = attack.get('ip', attack.get('attacker_ip', 'Unknown IP'))
+    ips = set()
+    for a in db:
+        v = a.get('verdict', 'INFO')
+        ip = a.get('ip', '')
         if ip and ip != "Unknown IP":
-            attacker_ips.add(ip)
-
-        if "CRITICAL" in verdict: counts["CRITICAL"] += 1
-        elif "HIGH" in verdict: counts["HIGH"] += 1
-        elif "WARNING" in verdict: counts["WARNING"] += 1
-        elif "INFO" in verdict: counts["INFO"] += 1
-
+            ips.add(ip)
+        if "CRITICAL" in v:
+            counts["CRITICAL"] += 1
+        elif "HIGH" in v:
+            counts["HIGH"] += 1
+        elif "WARNING" in v:
+            counts["WARNING"] += 1
+        else:
+            counts["INFO"] += 1
     total = sum(counts.values())
-    insight_html = ""
-
     if total == 0:
-        insight_html = "<span class='text-info fw-bold'>✅ System secure. Active listening on SSH honeypot. Awaiting network activity...</span>"
-        border_class = "border-info"
+        html = "<span class='text-info'>✅ System secure. Awaiting activity.</span>"
+        border = "border-info"
     elif counts["CRITICAL"] > 0:
-        ips_str = ", ".join(attacker_ips)
-        insight_html = f"""
-        <strong class='text-danger fs-5'>🚨 CRITICAL INCIDENT: MULTI-STAGE BREACH</strong>
-        <ul class="mb-0 mt-2 text-light" style="font-size: 0.95em;">
-            <li><strong>Adversary IP:</strong> {ips_str}</li>
-        </ul>
-        """
-        border_class = "border-danger"
+        html = f"<strong class='text-danger'>🚨 CRITICAL: {', '.join(ips)}</strong>"
+        border = "border-danger"
     else:
-        insight_html = "<span class='text-success'>✅ Routine monitoring active.</span>"
-        border_class = "border-success"
+        html = "<span class='text-success'>✅ Routine monitoring.</span>"
+        border = "border-success"
+    return jsonify({"counts": counts, "insight_html": html, "border_class": border})
 
-    return jsonify({"counts": counts, "insight_html": insight_html, "border_class": border_class})
-
-@app.route('/api/export-report', methods=['GET'])
-def export_report():
-    attack_database = get_db()
+@app.route('/api/export-report')
+def export():
+    db = get_db()
     pdf = FPDF()
+    pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
 
-    pdf.add_page()
-
-    def add_line(text, style='', size=10, align='L'):
+    def add_line(txt, style='', size=10, align='L'):
         pdf.set_font("Courier", style=style, size=size)
-        clean_text = text.encode('ascii', 'ignore').decode('ascii')
-        pdf.multi_cell(0, 6, txt=clean_text, align=align)
+        clean = txt.encode('ascii', 'ignore').decode('ascii')
+        pdf.multi_cell(0, 6, clean, align=align)
 
-    add_line("================================================================================", style='B')
-    add_line(" [+] CYBERSENTINEL: AI-ENHANCED THREAT INTELLIGENCE & FORENSIC REPORT", style='B', size=11, align='C')
-    add_line("================================================================================", style='B')
+    add_line("=" * 60, style='B')
+    add_line("CYBERSENTINEL FORENSIC REPORT", style='B', size=12, align='C')
+    add_line("=" * 60)
+    add_line(f"Generated: {datetime.datetime.now(MYT).strftime('%Y-%m-%d %H:%M:%S')} (MYT)")
     add_line("")
-    add_line(f"Report Generated: {datetime.datetime.now(MYT).strftime('%Y-%m-%d %H:%M:%S')} (Malaysia Time)")
-    add_line("")
-
-    if not attack_database:
-        add_line("No events recorded in the current session.")
+    if not db:
+        add_line("No events.")
     else:
-        for idx, attack in enumerate(attack_database, 1):
-            ip_val = attack.get('ip', attack.get('attacker_ip', 'Unknown IP'))
-            add_line(f"{idx}. [{attack['time']}] ATTACKER: {ip_val} -> TARGET: {attack.get('target_ip', 'N/A')}")
-            add_line(f"    EVENT    : {attack['event']}")
-            add_line(f"    PAYLOAD  : {attack['details'][:100]}")
-            add_line(f"    VERDICT  : {attack['verdict']}")
-            add_line("    ------------------------------------------------------------------")
-            add_line("")
+        for i, a in enumerate(db, 1):
+            ip = a.get('ip', 'Unknown')
+            add_line(f"{i}. [{a['time']}] {ip} -> {a.get('target_ip', 'N/A')}")
+            add_line(f"   Event: {a['event']}")
+            add_line(f"   Payload: {a['details'][:100]}")
+            add_line(f"   Verdict: {a['verdict']}")
+            add_line(f"   Explanation: {a.get('simple_explanation', 'N/A')}")
+            add_line("   ---")
+    filename = f"Report_{datetime.datetime.now(MYT).strftime('%Y%m%d_%H%M%S')}.pdf"
+    path = os.path.join(REPORT_FOLDER, filename)
+    pdf.output(path)
+    return send_file(path, as_attachment=True, download_name=filename)
 
-    filename = f"AI_Threat_Report_{datetime.datetime.now(MYT).strftime('%Y%m%d_%H%M%S')}.pdf"
-    filepath = os.path.join(REPORT_FOLDER, filename)
+@app.route('/api/health')
+def health():
+    return jsonify({
+        "status": "running",
+        "timestamp": datetime.datetime.now(MYT).strftime("%Y-%m-%d %H:%M:%S"),
+        "random_forest_loaded": vectorizer is not None and rf_model is not None,
+        "model_files_exist": os.path.exists(model_path) and os.path.exists(rf_path),
+        "load_error": model_load_error,
+        "database_size": len(get_db())
+    })
 
-    try:
-        pdf.output(filepath)
-        return send_file(filepath, as_attachment=True, download_name=filename)
-    except Exception as e:
-        print(f"PDF Generation Error: {e}")
-        return jsonify({"error": "Failed to generate PDF"}), 500
-
-
+# --- RENDER COMPATIBILITY: bind to PORT environment variable ---
 if __name__ == '__main__':
-    import os
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
