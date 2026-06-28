@@ -136,7 +136,7 @@ Only return the explanation text.
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "llama3-8b-8192",   # Free and fast
+            "model": "llama-3.1-8b-instant",   # Free and fast
             "messages": [
                 {"role": "system", "content": "You are a helpful cybersecurity assistant."},
                 {"role": "user", "content": prompt}
