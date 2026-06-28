@@ -12,6 +12,14 @@ import pickle
 import warnings
 import traceback
 
+# OpenAI (optional – only if API key is set)
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    openai = None
+
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
@@ -102,8 +110,46 @@ else:
 
 print("=" * 60)
 
-# --- FALLBACK EXPLANATION GENERATOR ---
-def generate_explanation(classification, risk_flags, entropy_score):
+# --- GENERATIVE AI EXPLANATION (OpenAI) ---
+def generate_ai_explanation(command, classification, confidence, risk_flags, entropy_score):
+    """Use OpenAI to generate a friendly, plain‑English explanation."""
+    if not OPENAI_AVAILABLE or not os.getenv('OPENAI_API_KEY'):
+        return None
+
+    try:
+        client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        prompt = f"""
+You are a cybersecurity explainer. Explain this threat in simple, plain English:
+
+Command: "{command}"
+Threat type: {classification}
+Confidence: {confidence}%
+Risk flags: {risk_flags}
+Complexity score: {entropy_score}
+
+Write a 2‑3 sentence explanation that a non‑technical person can understand. 
+Be friendly, use analogies if helpful, and do not include technical jargon.
+Only return the explanation text.
+"""
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",  # or "gpt-3.5-turbo" – both work well
+            messages=[
+                {"role": "system", "content": "You are a helpful cybersecurity assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=120,
+            temperature=0.7
+        )
+        explanation = response.choices[0].message.content.strip()
+        if len(explanation) > 300:
+            explanation = explanation[:297] + "..."
+        return explanation
+    except Exception as e:
+        print(f"⚠️ OpenAI error: {e}")
+        return None
+
+# --- STATIC FALLBACK EXPLANATION ---
+def generate_static_explanation(classification, risk_flags, entropy_score):
     explanations = {
         "Cryptojacking": "🚨 This looks like someone trying to use your computer to mine cryptocurrency without permission. It's like someone secretly using your electricity to run their Bitcoin machine!",
         "Persistence": "🔐 This seems like someone trying to install a hidden backdoor to keep accessing your system later. Think of it as someone leaving a spare key under the mat.",
@@ -182,7 +228,13 @@ def process_command(command_input):
         verdict = f"{severity}: AI Detected {best}"
 
         anchors = ", ".join([f"'{w}'" for w in top_words]) if top_words else "none"
-        explanation = generate_explanation(best, flags, entropy)
+
+        # Try generative AI first
+        ai_explanation = generate_ai_explanation(command_input, best, best_prob, flags, entropy)
+        if ai_explanation:
+            explanation = ai_explanation
+        else:
+            explanation = generate_static_explanation(best, flags, entropy)
 
         reasoning = (
             f"🎯 <b>Confidence:</b> {best_prob:.1f}%|"
@@ -212,7 +264,7 @@ def process_command(command_input):
             "classification": "Unknown"
         }]
 
-# --- FLASK ROUTES ---
+# --- FLASK ROUTES (unchanged) ---
 @app.route('/')
 def index():
     db = get_db()
@@ -367,7 +419,8 @@ def health():
         "random_forest_loaded": vectorizer is not None and rf_model is not None,
         "model_files_exist": os.path.exists(model_path) and os.path.exists(rf_path),
         "load_error": model_load_error,
-        "database_size": len(get_db())
+        "database_size": len(get_db()),
+        "openai_available": OPENAI_AVAILABLE and bool(os.getenv('OPENAI_API_KEY'))
     })
 
 # --- RENDER COMPATIBILITY ---
