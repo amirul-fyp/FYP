@@ -128,7 +128,7 @@ Only return the explanation text.
 """
 
     try:
-        API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
+        API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-base"
         headers = {"Authorization": f"Bearer {api_key}"}
         payload = {
             "inputs": prompt,
