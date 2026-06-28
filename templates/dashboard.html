@@ -187,18 +187,22 @@
                             <strong>Action:</strong> ${action} <br>
                             <strong>Verdict:</strong> ${verdict} <br>
                             
-                            <!-- AI Threat Explanation -->
-                            <div class="mt-3 p-2 rounded explanation-box">
+                            <!-- ========================================== -->
+                            <!-- 1. PRIMARY AI CONCLUSION (now first)      -->
+                            <!-- ========================================== -->
+                            <div class="mt-3 p-2 rounded reasoning-box">
+                                <strong class="text-white" style="font-size: 0.85em;">⚙️ Primary AI Conclusion:</strong> <br>
+                                <div class="text-success" style="font-size: 0.9em; margin-top: 5px;">${reasoningHtml}</div>
+                            </div>
+                            
+                            <!-- ========================================== -->
+                            <!-- 2. AI THREAT EXPLANATION (now second)     -->
+                            <!-- ========================================== -->
+                            <div class="mt-2 p-2 rounded explanation-box">
                                 <strong class="text-white" style="font-size: 0.85em;">💡 AI Threat Explanation</strong> <br>
                                 <div class="explanation-text" style="margin-top: 5px;">
                                     ${simpleExplanation}
                                 </div>
-                            </div>
-                            
-                            <!-- Primary AI Conclusion -->
-                            <div class="mt-2 p-2 rounded reasoning-box">
-                                <strong class="text-white" style="font-size: 0.85em;">⚙️ Primary AI Conclusion:</strong> <br>
-                                <div class="text-success" style="font-size: 0.9em; margin-top: 5px;">${reasoningHtml}</div>
                             </div>
                         </div>
                     `;
