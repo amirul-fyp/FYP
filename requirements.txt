@@ -4,4 +4,4 @@ joblib
 numpy
 scikit-learn
 fpdf
-openai
+requests
