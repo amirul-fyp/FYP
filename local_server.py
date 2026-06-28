@@ -275,10 +275,11 @@ def process_command(command_input):
             "classification": "Unknown"
         }]
 
-# --- FLASK ROUTES (unchanged) ---
+# --- FLASK ROUTES ---
 @app.route('/')
 def index():
     db = get_db()
+    print(f"📊 Dashboard loaded with {len(db)} alerts")  # <-- ADDED DEBUG PRINT
     try:
         return render_template('dashboard.html', alerts=db)
     except Exception as e:
@@ -579,6 +580,17 @@ def health():
         "load_error": model_load_error,
         "database_size": len(get_db()),
         "groq_available": bool(os.getenv('GROQ_API_KEY'))
+    })
+
+# ============================================
+# DEBUG ROUTE – Check database content
+# ============================================
+@app.route('/debug/db')
+def debug_db():
+    db = get_db()
+    return jsonify({
+        "count": len(db),
+        "sample": db[:5]   # show first 5 entries
     })
 
 # --- RENDER COMPATIBILITY ---
