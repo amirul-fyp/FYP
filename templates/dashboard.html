@@ -3,221 +3,288 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Threat Analyzer Dashboard</title>
+    <title>CYBERSENTINEL Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style> 
-        body { background-color: #121212; color: #ffffff; } 
-        .payload-data { font-family: 'Courier New', Courier, monospace; font-size: 0.9em; color: #00ffcc; }
-        .clickable-row { cursor: pointer; transition: 0.2s; }
-        .clickable-row:hover { background-color: #2c3034 !important; }
-        .selected-row { border-left: 4px solid #0dcaf0; background-color: #212529 !important; }
-        .text-orange { color: #fd7e14 !important; }
-        .border-orange { border-color: #fd7e14 !important; }
+    <style>
+        body { background-color: #121212; color: #e0e0e0; }
+        .card { background-color: #1e1e1e; border-color: #333; }
+        .table { color: #e0e0e0; }
+        .table-dark { background-color: #1e1e1e; }
+        .table-hover tbody tr:hover { background-color: #2a2a2a; color: #fff;}
+        .log-row.bg-secondary { background-color: #333 !important; }
+        
+        .reasoning-box { background-color: #000; border-left: 3px solid #dc3545; }
+        .advanced-box { background-color: #000; border-left: 3px solid #0dcaf0; }
+        .explanation-box { background-color: #000; border-left: 3px solid #28a745; }
+
+        .verdict-critical { color: #ff4d4d !important; } 
+        .verdict-high { color: #fd7e14 !important; }     
+        .verdict-warning { color: #ffc107 !important; }  
+        .verdict-info { color: #0dcaf0 !important; }     
+        
+        /* New styling to make the text breakdown look incredibly clean */
+        .analytics-line {
+            display: block;
+            margin-bottom: 6px;
+            line-height: 1.4;
+        }
+
+        /* Explanation text styling */
+        .explanation-text {
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: #d4e8f0;
+        }
+
+        /* Collapsible button styling */
+        .btn-collapse {
+            color: #0dcaf0;
+            text-decoration: none;
+            font-size: 0.85rem;
+        }
+        .btn-collapse:hover {
+            color: #00f0ff;
+            text-decoration: underline;
+        }
+
+        /* AI Badge */
+        .ai-badge {
+            background: linear-gradient(135deg, #00f0ff, #0088ff);
+            color: #000;
+            padding: 0.2rem 0.8rem;
+            border-radius: 12px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
     </style>
 </head>
-<body class="container mt-4">
-
-    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3 border-secondary">
-        <h2>🛡️ AI-Enhanced SSH Threat Dashboard</h2>
-        <div class="d-flex gap-2">
-            <button onclick="clearLogs()" class="btn btn-warning text-dark fw-bold">🗑️ Clear Logs</button>
-            <button onclick="analyzeData()" class="btn btn-info fw-bold">🧠 Generate Summary</button>
-            <button onclick="generateReport()" class="btn btn-success fw-bold">📄 Archive AI Report</button>
+<body>
+    <div class="container-fluid py-4">
+        
+        <div class="d-flex justify-content-between align-items-center mb-4 border-bottom border-secondary pb-3">
+            <h2 class="text-light m-0">🛡️ CYBERSENTINEL: AI-Enhanced SSH Threat Analysis</h2>
+            <div>
+                <a href="/api/export-report" class="btn btn-outline-info btn-sm me-2">📥 Export PDF Report</a>
+                <button class="btn btn-outline-danger btn-sm" onclick="clearLogs()">🗑️ Clear Logs</button>
+            </div>
         </div>
-    </div>
 
-    <div class="row mb-4">
-        <div class="col-md-5">
-            <div class="card bg-dark border-secondary h-100">
-                <div class="card-body">
-                    <h5 class="card-title text-light mb-3">Live Threat Distribution</h5>
-                    <div style="height: 200px; display: flex; justify-content: center;">
-                        <canvas id="threatChartCanvas"></canvas>
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="card border-warning h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="card-title text-light m-0">🧠 Live Forensic AI Analysis</h5>
+                            <button onclick="clearAnalysisView()" class="btn btn-sm btn-outline-warning">↺ Clear View</button>
+                        </div>
+                        
+                        <div id="forensic-display">
+                            <div class="mt-2 text-light">
+                                <span class='text-info fw-bold'>✅ Awaiting Log Selection.</span>
+                                <p class="text-muted mt-2" style="font-size: 0.9em;">Click any log entry below to run a deep forensic AI analysis on the specific attack vector. Below is the current session summary.</p>
+                                
+                                <div class="row mt-3 text-center">
+                                    <div class="col">
+                                        <div class="p-3 bg-dark rounded border border-secondary">
+                                            <span class="text-muted" style="font-size: 0.85em;">Total Tracked Events</span><br>
+                                            <strong class="fs-4">{{ alerts|length }}</strong>
+                                        </div>
+                                    </div>
+                                    <div class="col">
+                                        <div class="p-3 bg-dark rounded border border-secondary">
+                                            <span class="text-muted" style="font-size: 0.85em;">Status</span><br>
+                                            <strong class="fs-4 text-success">Monitoring Live</strong>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-body d-flex justify-content-center align-items-center">
+                        <canvas id="threatChart"></canvas>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-7">
-            <div class="card bg-dark border-secondary h-100">
-                <div class="card-body d-flex flex-column justify-content-center">
-                    <h5 class="card-title text-light mb-3">🧠 Forensic AI Analysis</h5>
-                    <div id="aiChartInsight" class="p-3 border-start border-4 border-info bg-black rounded">
-                        Fetching analysis...
-                    </div>
+
+        <div class="card">
+            <div class="card-header border-bottom border-secondary d-flex justify-content-between align-items-center">
+                <h5 class="m-0 text-light">🔴 Real-Time Attack Vector Logs</h5>
+                <small class="text-muted">Auto-refresh disabled for manual inspection</small>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover m-0">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Attacker IP</th>
+                                <th>Event Type</th>
+                                <th>Payload / Context</th>
+                                <th>AI Verdict</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for attack in alerts|reverse %}
+                            <tr class="log-row" style="cursor: pointer;"
+                                data-time="{{ attack.time }}"
+                                data-attacker-ip="{{ attack.attacker_ip }}"
+                                data-target-ip="{{ attack.target_ip }}"
+                                data-action="{{ attack.details }}"
+                                data-verdict="{{ attack.verdict }}"
+                                data-reasoning="{{ attack.reasoning }}"
+                                data-advanced="{{ attack.advanced }}"
+                                data-simple-explanation="{{ attack.simple_explanation if attack.simple_explanation else 'No explanation available.' }}">
+                                
+                                <td>{{ attack.time }}</td>
+                                <td><code class="text-danger">{{ attack.attacker_ip }}</code></td>
+                                <td>{{ attack.event }}</td>
+                                <td>{{ attack.details }}</td>
+                                
+                                <td class="fw-bold
+                                    {% if 'CRITICAL' in attack.verdict %}verdict-critical
+                                    {% elif 'HIGH' in attack.verdict %}verdict-high
+                                    {% elif 'WARNING' in attack.verdict %}verdict-warning
+                                    {% else %}verdict-info{% endif %}">
+                                    {{ attack.verdict }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
-    </div>
-
-    <div id="statusAlert" class="alert alert-dark" style="display:none; transition: 0.3s;"></div>
-
-    <div class="table-responsive">
-        <table class="table table-dark table-hover border-secondary" id="threatTable">
-            <thead>
-                <tr class="table-active">
-                    <th>Timestamp</th>
-                    <th>Attacker IP</th>
-                    <th>Event Type</th>
-                    <th>Payload / Context</th>
-                    <th>AI Verdict</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for alert in alerts | reverse %}
-                <tr class="clickable-row" 
-                    data-ip="{{ alert.get('ip', 'Unknown') }}" 
-                    data-event="{{ alert.get('event', 'General') }}" 
-                    data-payload="{{ alert.get('details', '') | e }}" 
-                    data-verdict="{{ alert.get('verdict', 'INFO: General Event') }}" 
-                    data-reasoning="{{ alert.get('reasoning', 'Standard honeypot event. No AI vectoring required.') | e }}"
-                    onclick="showSpecificAnalysis(this)">
-                    
-                    <td>{{ alert.get('time', 'N/A') }}</td>
-                    <td>{{ alert.get('ip', 'N/A') }}</td>
-                    <td class="fw-bold">{{ alert.get('event', 'N/A') }}</td>
-                    <td class="payload-data">{{ alert.get('details', '') }}</td>
-                    <td class="{% if 'CRITICAL' in alert.get('verdict', '') %}text-danger fw-bold{% elif 'HIGH' in alert.get('verdict', '') %}text-warning fw-bold{% elif 'WARNING' in alert.get('verdict', '') %}text-orange fw-bold{% else %}text-info{% endif %}">
-                        {{ alert.get('verdict', 'INFO: General Event') }}
-                    </td>
-                </tr>
-                {% else %}
-                <tr><td colspan="5" class="text-center text-muted py-4">Monitoring Active. Awaiting attacker simulation...</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
     </div>
 
     <script>
-        let refreshTimer = setTimeout(function(){ location.reload(); }, 15000);
-        let threatChartInstance = null;
+        let defaultSummaryHTML = "";
 
-        window.isRowSelected = false;
-        window.globalInsightHTML = "";
-        window.globalBorderClass = "";
+        document.addEventListener("DOMContentLoaded", function() {
+            defaultSummaryHTML = document.getElementById("forensic-display").innerHTML;
 
-        function updateChartAndAnalysis() {
             fetch('/api/chart-data')
-            .then(res => res.json())
-            .then(data => {
-                const ctx = document.getElementById('threatChartCanvas').getContext('2d');
-                if (threatChartInstance) {
-                    threatChartInstance.data.datasets[0].data = [data.counts.CRITICAL, data.counts.HIGH, data.counts.WARNING, data.counts.INFO];
-                    threatChartInstance.update();
-                } else {
-                    threatChartInstance = new Chart(ctx, {
+                .then(response => response.json())
+                .then(data => {
+                    const ctx = document.getElementById('threatChart').getContext('2d');
+                    new Chart(ctx, {
                         type: 'doughnut',
                         data: {
-                            labels: ['CRITICAL', 'HIGH', 'WARNING', 'INFO'],
+                            labels: ['Critical', 'High', 'Warning', 'Info'],
                             datasets: [{
                                 data: [data.counts.CRITICAL, data.counts.HIGH, data.counts.WARNING, data.counts.INFO],
-                                backgroundColor: ['#dc3545', '#ffc107', '#fd7e14', '#0dcaf0'],
-                                borderColor: '#121212',
-                                borderWidth: 3
+                                backgroundColor: ['#ff4d4d', '#fd7e14', '#ffc107', '#0dcaf0'],
+                                borderWidth: 0
                             }]
                         },
-                        options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: 'white' } } } }
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { position: 'right', labels: { color: '#e0e0e0' } }
+                            }
+                        }
                     });
-                }
+                });
 
-                window.globalInsightHTML = data.insight_html;
-                window.globalBorderClass = data.border_class;
-                
-                if (!window.isRowSelected) {
-                    let insightBox = document.getElementById('aiChartInsight');
-                    insightBox.innerHTML = window.globalInsightHTML;
-                    insightBox.className = `p-3 border-start border-4 bg-black rounded ${window.globalBorderClass}`;
-                }
+            const rows = document.querySelectorAll(".log-row");
+            const forensicDisplay = document.getElementById("forensic-display");
+
+            // --- THE FORMATTING LOGIC ---
+            // This reads the '|' character from Python and turns it into clean HTML lines
+            const formatList = (text) => {
+                if (!text || text === "N/A") return "N/A";
+                return text.split('|').map(item => `<span class="analytics-line">${item.trim()}</span>`).join('');
+            };
+
+            rows.forEach(row => {
+                row.addEventListener("click", function() {
+                    rows.forEach(r => r.classList.remove("bg-secondary"));
+                    this.classList.add("bg-secondary");
+
+                    const attackerIp = this.getAttribute("data-attacker-ip");
+                    const targetIp = this.getAttribute("data-target-ip");
+                    const action = this.getAttribute("data-action");
+                    const verdict = this.getAttribute("data-verdict");
+                    const simpleExplanation = this.getAttribute("data-simple-explanation");
+                    
+                    // Grab strings from python and immediately format them
+                    const reasoningHtml = formatList(this.getAttribute("data-reasoning"));
+                    const advancedHtml = formatList(this.getAttribute("data-advanced"));
+
+                    forensicDisplay.innerHTML = `
+                        <strong class='text-warning fs-5'>⚠️ Active Session Detected</strong>
+                        <div class="mt-2 text-light" style="font-size: 0.95em;">
+                            <strong>Attacker IP (Source):</strong> <code class="text-danger">${attackerIp}</code> <br>
+                            <strong>Target IP (Honeypot):</strong> <code class="text-success">${targetIp}</code> <br>
+                            <strong>Action:</strong> ${action} <br>
+                            <strong>Verdict:</strong> ${verdict} <br>
+                            
+                            <!-- ============================================ -->
+                            <!-- NEW: AI SIMPLE EXPLANATION SECTION           -->
+                            <!-- ============================================ -->
+                            <div class="mt-3 p-2 rounded explanation-box">
+                                <strong class="text-white" style="font-size: 0.85em;">
+                                    💡 AI Threat Explanation 
+                                    <span class="ai-badge">AI Generated</span>
+                                </strong> <br>
+                                <div class="explanation-text" style="margin-top: 5px;">
+                                    <i class="fas fa-quote-left text-success me-1" style="opacity: 0.5;"></i>
+                                    ${simpleExplanation}
+                                    <i class="fas fa-quote-right text-success ms-1" style="opacity: 0.5;"></i>
+                                </div>
+                            </div>
+                            
+                            <!-- ============================================ -->
+                            <!-- UPDATED: Primary AI Conclusion              -->
+                            <!-- ============================================ -->
+                            <div class="mt-2 p-2 rounded reasoning-box">
+                                <strong class="text-white" style="font-size: 0.85em;">⚙️ Primary AI Conclusion:</strong> <br>
+                                <div class="text-success" style="font-size: 0.9em; margin-top: 5px;">${reasoningHtml}</div>
+                            </div>
+                            
+                            <!-- ============================================ -->
+                            <!-- UPDATED: Advanced Analytics (Collapsible)    -->
+                            <!-- ============================================ -->
+                            <div class="mt-2">
+                                <a class="btn-collapse" data-bs-toggle="collapse" href="#advancedAnalytics" role="button" aria-expanded="false" aria-controls="advancedAnalytics">
+                                    🔧 View Advanced Technical Details
+                                </a>
+                                <div class="collapse mt-2" id="advancedAnalytics">
+                                    <div class="p-2 rounded advanced-box">
+                                        <strong class="text-white" style="font-size: 0.85em;">🔬 Under-the-Hood Analytics:</strong> <br>
+                                        <div class="text-info" style="font-size: 0.9em; margin-top: 5px;">${advancedHtml}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
             });
-        }
+        });
 
-        updateChartAndAnalysis();
-
-        function showSpecificAnalysis(rowElement) {
-            clearTimeout(refreshTimer);
-            window.isRowSelected = true;
-
-            document.querySelectorAll('.clickable-row').forEach(row => row.classList.remove('selected-row'));
-            rowElement.classList.add('selected-row');
-
-            const ip = rowElement.getAttribute('data-ip') || "Unknown IP";
-            const event = rowElement.getAttribute('data-event') || "Unknown Event";
-            const payload = rowElement.getAttribute('data-payload') || "No payload recorded.";
-            const verdict = rowElement.getAttribute('data-verdict') || "INFO: General Event";
-            const reasoning = rowElement.getAttribute('data-reasoning') || "Standard honeypot event.";
-
-            let borderClass = "border-info"; let titleColor = "text-info"; let icon = "ℹ️";
-            if (verdict.includes("CRITICAL")) { borderClass = "border-danger"; titleColor = "text-danger"; icon = "🚨"; } 
-            else if (verdict.includes("HIGH")) { borderClass = "border-warning"; titleColor = "text-warning"; icon = "⚠️"; }
-
-            const detailHTML = `
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <strong class='${titleColor} fs-5'>${icon} ISOLATED EVENT ANALYSIS</strong>
-                    <button class="btn btn-sm btn-outline-secondary text-light" onclick="restoreGlobalAnalysis(event)">✖ Close View</button>
-                </div>
-                <ul class="mb-0 mt-2 text-light" style="font-size: 0.95em;">
-                    <li><strong>Target IP:</strong> ${ip}</li>
-                    <li><strong>Attack Vector:</strong> ${event}</li>
-                    <li><strong>Raw Payload:</strong> <span class="payload-data">${payload}</span></li>
-                </ul>
-                <div class="${titleColor} mt-3 border-top border-secondary pt-2" style="font-size: 0.9em;">
-                    <strong>🎯 Specific AI Verdict:</strong> ${verdict}
-                </div>
-                <div class="text-secondary mt-2" style="font-size: 0.85em; font-family: monospace;">
-                    <strong>⚙️ Model Reasoning:</strong> ${reasoning}
-                </div>
-            `;
-
-            let insightBox = document.getElementById('aiChartInsight');
-            insightBox.innerHTML = detailHTML;
-            insightBox.className = `p-3 border-start border-4 bg-black rounded ${borderClass}`;
-        }
-
-        function restoreGlobalAnalysis(e) {
-            if(e) e.stopPropagation();
-            window.isRowSelected = false;
-            document.querySelectorAll('.clickable-row').forEach(row => row.classList.remove('selected-row'));
-            let insightBox = document.getElementById('aiChartInsight');
-            insightBox.innerHTML = window.globalInsightHTML;
-            insightBox.className = `p-3 border-start border-4 bg-black rounded ${window.globalBorderClass}`;
-            refreshTimer = setTimeout(function(){ location.reload(); }, 15000); 
+        function clearAnalysisView() {
+            document.getElementById("forensic-display").innerHTML = defaultSummaryHTML;
+            document.querySelectorAll(".log-row").forEach(r => r.classList.remove("bg-secondary"));
         }
 
         function clearLogs() {
-            if(confirm("Clear database for a new simulation?")) {
-                clearTimeout(refreshTimer);
-                fetch('/api/clear', { method: 'POST' }).then(() => location.reload());
+            if(confirm("Are you sure you want to clear all forensic logs?")) {
+                fetch('/api/clear', { method: 'POST' })
+                .then(response => window.location.reload());
             }
         }
-
-        function analyzeData() {
-            clearTimeout(refreshTimer);
-            fetch('/api/analyze')
-            .then(res => res.json())
-            .then(data => {
-                let alertBox = document.getElementById('statusAlert');
-                alertBox.style.display = 'block';
-                alertBox.innerHTML = `<strong>🧠 Summary Report:</strong> Processed ${data.total_attacks} events. <span class="text-danger fw-bold">${data.critical_threats} CRITICAL.</span>`;
-                alertBox.className = "alert alert-info";
-                setTimeout(() => { location.reload(); }, 6000);
-            });
-        }
-
-        function generateReport() {
-            clearTimeout(refreshTimer); 
-            let alertBox = document.getElementById('statusAlert');
-            alertBox.style.display = 'block';
-            alertBox.innerHTML = `<strong>⏳ Generating...</strong> Compiling forensic report.`;
-            alertBox.className = "alert alert-warning";
-
-            fetch('/api/export-report')
-            .then(res => res.json())
-            .then(data => {
-                alertBox.innerHTML = `<strong>✅ Archiving Complete:</strong> ${data.message}`;
-                alertBox.className = "alert alert-success";
-                setTimeout(() => { refreshTimer = setTimeout(function(){ location.reload(); }, 3000); alertBox.style.display = 'none'; }, 5000);
-            });
-        }
     </script>
+
+    <!-- Bootstrap JS for collapse functionality -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
