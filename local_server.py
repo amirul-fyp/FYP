@@ -12,7 +12,7 @@ import pickle
 import warnings
 import traceback
 
-# Suppress warnings (e.g., scikit-learn version mismatches)
+# Suppress warnings
 warnings.filterwarnings("ignore")
 
 # Lock the server to Malaysian Time (UTC+8)
@@ -67,7 +67,6 @@ except ImportError:
 
 if os.path.exists(model_path) and os.path.exists(rf_path):
     try:
-        # Try joblib first
         print("🧠 Loading with joblib...")
         vectorizer = joblib.load(model_path)
         rf_model = joblib.load(rf_path)
@@ -103,7 +102,7 @@ else:
 
 print("=" * 60)
 
-# --- FALLBACK EXPLANATION GENERATOR (no generative AI) ---
+# --- FALLBACK EXPLANATION GENERATOR ---
 def generate_explanation(classification, risk_flags, entropy_score):
     explanations = {
         "Cryptojacking": "🚨 This looks like someone trying to use your computer to mine cryptocurrency without permission. It's like someone secretly using your electricity to run their Bitcoin machine!",
@@ -129,11 +128,11 @@ def process_command(command_input):
             "details": command_input,
             "verdict": "INFO: AI Offline",
             "reasoning": f"ML model not loaded: {model_load_error}",
-            "advanced": "N/A",
-            "simple_explanation": "⚠️ AI detection is offline. Please check server logs."
+            "simple_explanation": "⚠️ AI detection is offline. Please check server logs.",
+            "confidence": 0,
+            "classification": "Unknown"
         }]
     try:
-        # Transform and predict
         features = vectorizer.transform([clean])
         proba = rf_model.predict_proba(features)[0]
         classes = rf_model.classes_
@@ -149,13 +148,11 @@ def process_command(command_input):
             second = classes[idx[1]]
             second_prob = proba[idx[1]] * 100
 
-        # Feature importance
         feature_names = vectorizer.get_feature_names_out()
         weights = features.toarray()[0]
         top_idx = weights.argsort()[-3:][::-1]
         top_words = [feature_names[i] for i in top_idx if weights[i] > 0]
 
-        # Entropy
         entropy = 0.0
         entropy_status = "Standard"
         if len(clean) > 1:
@@ -185,17 +182,12 @@ def process_command(command_input):
         verdict = f"{severity}: AI Detected {best}"
 
         anchors = ", ".join([f"'{w}'" for w in top_words]) if top_words else "none"
-        simple = generate_explanation(best, flags, entropy)
+        explanation = generate_explanation(best, flags, entropy)
 
         reasoning = (
             f"🎯 <b>Confidence:</b> {best_prob:.1f}%|"
             f"🔑 <b>Key Triggers:</b> [{anchors}]|"
             f"💡 <b>Insight:</b> {insight}"
-        )
-        advanced = (
-            f"📊 <b>Confidence:</b> {best_prob:.1f}%|"
-            f"⚠️ <b>Risk Flags:</b> {', '.join(flags) if flags else 'None'}|"
-            f"🔍 <b>Entropy:</b> {entropy_status} ({entropy})"
         )
 
         return [{
@@ -203,8 +195,9 @@ def process_command(command_input):
             "details": command_input,
             "verdict": verdict,
             "reasoning": reasoning,
-            "advanced": advanced,
-            "simple_explanation": simple
+            "simple_explanation": explanation,
+            "confidence": best_prob,
+            "classification": best
         }]
     except Exception as e:
         print(f"⚠️ Processing error: {e}")
@@ -214,8 +207,9 @@ def process_command(command_input):
             "details": command_input,
             "verdict": "INFO: AI Error",
             "reasoning": f"Error: {str(e)}",
-            "advanced": "N/A",
-            "simple_explanation": f"⚠️ Processing error: {str(e)}"
+            "simple_explanation": f"⚠️ Processing error: {str(e)}",
+            "confidence": 0,
+            "classification": "Unknown"
         }]
 
 # --- FLASK ROUTES ---
@@ -261,8 +255,9 @@ def receive_logs():
                 "details": s['details'],
                 "verdict": s['verdict'],
                 "reasoning": s.get('reasoning', ''),
-                "advanced": s.get('advanced', ''),
-                "simple_explanation": s.get('simple_explanation', '')
+                "simple_explanation": s.get('simple_explanation', ''),
+                "confidence": s.get('confidence', 0),
+                "classification": s.get('classification', 'Unknown')
             })
     else:
         details = str(data.get("message", "N/A"))
@@ -282,8 +277,9 @@ def receive_logs():
             "details": details,
             "verdict": verdict,
             "reasoning": "Standard event.",
-            "advanced": "N/A",
-            "simple_explanation": "General system event."
+            "simple_explanation": "General system event.",
+            "confidence": 0,
+            "classification": "General Event"
         })
     save_db(db)
     return jsonify({"status": "received"}), 200
@@ -374,7 +370,7 @@ def health():
         "database_size": len(get_db())
     })
 
-# --- RENDER COMPATIBILITY: bind to PORT environment variable ---
+# --- RENDER COMPATIBILITY ---
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
