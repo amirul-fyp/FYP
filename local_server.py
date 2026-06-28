@@ -122,8 +122,9 @@ Confidence: {confidence}%
 Risk flags: {risk_flags}
 Complexity score: {entropy_score}
 
-Write a 2‑3 sentence explanation that a non‑technical person can understand.
+Write a **complete** 3‑4 sentence explanation that a non‑technical person can understand.
 Be friendly, use analogies if helpful, and do not include technical jargon.
+Provide a full explanation – do not cut off early.
 Only return the explanation text.
 """
 
@@ -134,20 +135,21 @@ Only return the explanation text.
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "llama-3.1-8b-instant",  # ✅ Updated model
+            "model": "llama-3.1-8b-instant",   # or another working model
             "messages": [
                 {"role": "system", "content": "You are a helpful cybersecurity assistant."},
                 {"role": "user", "content": prompt}
             ],
-            "max_tokens": 150,
+            "max_tokens": 250,                # ✅ increased from 150
             "temperature": 0.7
         }
         response = requests.post(url, headers=headers, json=payload, timeout=15)
         if response.status_code == 200:
             result = response.json()
             explanation = result['choices'][0]['message']['content'].strip()
-            if len(explanation) > 300:
-                explanation = explanation[:297] + "..."
+            # ✅ increased character limit to 600, or remove entirely
+            if len(explanation) > 600:
+                explanation = explanation[:597] + "..."
             return explanation
         else:
             print(f"⚠️ Groq API error: {response.status_code} - {response.text}")
