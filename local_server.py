@@ -103,12 +103,38 @@ else:
 
 print("=" * 60)
 
+# --- TELEGRAM NOTIFICATIONS ---
+def send_telegram_alert(message):
+    """Send a Telegram notification for critical threats."""
+    bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+    chat_id = os.getenv('TELEGRAM_CHAT_ID')
+    if not bot_token or not chat_id:
+        print("⚠️ Telegram credentials not set – skipping alert.")
+        return
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": message,
+            "parse_mode": "HTML"
+        }
+        response = requests.post(url, json=payload, timeout=5)
+        if response.status_code == 200:
+            print("✅ Telegram alert sent!")
+        else:
+            print(f"⚠️ Telegram error: {response.status_code}")
+    except Exception as e:
+        print(f"⚠️ Telegram send failed: {e}")
+
+@app.route('/test/telegram')
+def test_telegram():
+    message = "🚨 <b>Test Alert</b>\nThis is a test message from CyberSentinel."
+    send_telegram_alert(message)
+    return "Test alert sent! Check your Telegram."
+
 # --- GENERATIVE AI EXPLANATION (Groq) ---
 def generate_ai_explanation(command, classification, confidence, risk_flags, entropy_score):
-    """
-    Use Groq's free API to generate a plain‑English explanation.
-    Falls back to static if the API call fails.
-    """
+    """Use Groq's free API to generate a plain‑English explanation."""
     api_key = os.getenv('GROQ_API_KEY')
     if not api_key:
         return None
@@ -124,7 +150,6 @@ Complexity score: {entropy_score}
 
 Write a **complete** 3‑4 sentence explanation that a non‑technical person can understand.
 Be friendly, use analogies if helpful, and do not include technical jargon.
-Provide a full explanation – do not cut off early.
 Only return the explanation text.
 """
 
@@ -135,19 +160,18 @@ Only return the explanation text.
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "llama-3.1-8b-instant",   # or another working model
+            "model": "llama-3.1-8b-instant",
             "messages": [
                 {"role": "system", "content": "You are a helpful cybersecurity assistant."},
                 {"role": "user", "content": prompt}
             ],
-            "max_tokens": 250,                # ✅ increased from 150
+            "max_tokens": 250,
             "temperature": 0.7
         }
         response = requests.post(url, headers=headers, json=payload, timeout=15)
         if response.status_code == 200:
             result = response.json()
             explanation = result['choices'][0]['message']['content'].strip()
-            # ✅ increased character limit to 600, or remove entirely
             if len(explanation) > 600:
                 explanation = explanation[:597] + "..."
             return explanation
@@ -179,7 +203,7 @@ def generate_static_explanation(classification, risk_flags, entropy_score):
     return base
 
 # --- CORE PROCESSING FUNCTION ---
-def process_command(command_input):
+def process_command(command_input, attacker_ip="Unknown"):
     clean = re.sub(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', 'IP_ADDRESS', command_input)
     if vectorizer is None or rf_model is None:
         return [{
@@ -255,6 +279,20 @@ def process_command(command_input):
             f"💡 <b>Insight:</b> {insight}"
         )
 
+        # --- SEND TELEGRAM ALERT FOR CRITICAL/HIGH THREATS ---
+        if severity in ["CRITICAL", "HIGH"]:
+            alert_msg = (
+                f"🚨 <b>CyberSentinel Alert</b>\n"
+                f"📌 <b>Severity:</b> {severity}\n"
+                f"🔹 <b>Attacker:</b> {attacker_ip}\n"
+                f"🔹 <b>Command:</b> {command_input}\n"
+                f"🔹 <b>Verdict:</b> {verdict}\n"
+                f"🔹 <b>Confidence:</b> {best_prob:.1f}%\n"
+                f"🔹 <b>Insight:</b> {insight}\n"
+                f"🔹 <b>Time:</b> {datetime.datetime.now(MYT).strftime('%Y-%m-%d %H:%M:%S')} (MYT)"
+            )
+            send_telegram_alert(alert_msg)
+
         return [{
             "event": "AI Analyzed Command",
             "details": command_input,
@@ -281,7 +319,6 @@ def process_command(command_input):
 @app.route('/')
 def index():
     db = get_db()
-    print(f"📊 Dashboard loaded with {len(db)} alerts")  # <-- ADDED DEBUG PRINT
     try:
         return render_template('dashboard.html', alerts=db)
     except Exception as e:
@@ -310,7 +347,7 @@ def receive_logs():
             print(f"⚠️ Base64 decode error: {e}")
 
     if event_type == "cowrie.command.input":
-        stages = process_command(command)
+        stages = process_command(command, src_ip)  # pass attacker IP for alerts
         for s in stages:
             db.append({
                 "time": datetime.datetime.now(MYT).strftime("%Y-%m-%d %H:%M:%S"),
@@ -395,37 +432,26 @@ def chart():
 @app.route('/api/export-report')
 def export():
     db = get_db()
-
-    # PDF setup
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-
-    # Set global font
     pdf.set_font("Helvetica", size=10)
 
-    # -----------------------------------------------------------------
-    # HEADER
-    # -----------------------------------------------------------------
     pdf.set_font("Helvetica", 'B', 18)
-    pdf.set_text_color(0, 51, 102)  # Dark blue
+    pdf.set_text_color(0, 51, 102)
     pdf.cell(0, 10, "CYBERSENTINEL FORENSIC REPORT", ln=True, align='C')
     pdf.set_font("Helvetica", 'I', 12)
-    pdf.set_text_color(100, 100, 100)  # Gray
+    pdf.set_text_color(100, 100, 100)
     pdf.cell(0, 6, "AI-Enhanced Threat Intelligence", ln=True, align='C')
     pdf.ln(4)
     pdf.set_draw_color(0, 51, 102)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(6)
 
-    # -----------------------------------------------------------------
-    # DATE & SUMMARY STATS
-    # -----------------------------------------------------------------
     pdf.set_font("Helvetica", size=10)
     pdf.set_text_color(0, 0, 0)
     pdf.cell(0, 6, f"Generated: {datetime.datetime.now(MYT).strftime('%Y-%m-%d %H:%M:%S')} (MYT)", ln=True)
 
-    # Summary stats
     total = len(db)
     critical = sum(1 for a in db if "CRITICAL" in a.get('verdict', ''))
     high = sum(1 for a in db if "HIGH" in a.get('verdict', ''))
@@ -439,16 +465,7 @@ def export():
     pdf.set_font("Helvetica", size=10)
     pdf.set_text_color(0, 0, 0)
 
-    # Create a small stats table with two columns
-    stats_data = [
-        ("Total Events", total),
-        ("Critical", critical),
-        ("High", high),
-        ("Warning", warning),
-        ("Info", info)
-    ]
-    # Use a simple layout with labels and values
-    for label, value in stats_data:
+    for label, value in [("Total Events", total), ("Critical", critical), ("High", high), ("Warning", warning), ("Info", info)]:
         pdf.set_font("Helvetica", 'B', 10)
         pdf.cell(40, 6, label + ":", border=0)
         pdf.set_font("Helvetica", size=10)
@@ -459,69 +476,33 @@ def export():
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(4)
 
-    # -----------------------------------------------------------------
-    # EVENT LOG (if any)
-    # -----------------------------------------------------------------
     if not db:
         pdf.set_font("Helvetica", 'I', 12)
         pdf.set_text_color(150, 150, 150)
         pdf.cell(0, 10, "No events recorded.", ln=True)
     else:
-        # Loop through events with alternating background
         for idx, a in enumerate(db, 1):
-            # Alternating row color (very light gray)
             if idx % 2 == 0:
                 pdf.set_fill_color(240, 240, 240)
             else:
                 pdf.set_fill_color(255, 255, 255)
 
-            # Start a block
             pdf.set_font("Helvetica", 'B', 10)
             pdf.set_text_color(0, 0, 0)
             pdf.cell(0, 6, f"Event #{idx}", ln=True, fill=True)
 
-            # Details
-            pdf.set_font("Helvetica", 'B', 9)
-            pdf.set_text_color(80, 80, 80)
-            pdf.cell(30, 5, "Timestamp:", border=0, fill=True)
-            pdf.set_font("Helvetica", size=9)
-            pdf.set_text_color(0, 0, 0)
-            pdf.cell(0, 5, a.get('time', ''), ln=True, fill=True)
-
-            pdf.set_font("Helvetica", 'B', 9)
-            pdf.set_text_color(80, 80, 80)
-            pdf.cell(30, 5, "Attacker IP:", border=0, fill=True)
-            pdf.set_font("Helvetica", size=9)
-            pdf.set_text_color(0, 0, 0)
-            pdf.cell(0, 5, a.get('ip', 'Unknown'), ln=True, fill=True)
-
-            pdf.set_font("Helvetica", 'B', 9)
-            pdf.set_text_color(80, 80, 80)
-            pdf.cell(30, 5, "Target IP:", border=0, fill=True)
-            pdf.set_font("Helvetica", size=9)
-            pdf.set_text_color(0, 0, 0)
-            pdf.cell(0, 5, a.get('target_ip', 'N/A'), ln=True, fill=True)
-
-            pdf.set_font("Helvetica", 'B', 9)
-            pdf.set_text_color(80, 80, 80)
-            pdf.cell(30, 5, "Event:", border=0, fill=True)
-            pdf.set_font("Helvetica", size=9)
-            pdf.set_text_color(0, 0, 0)
-            pdf.cell(0, 5, a.get('event', ''), ln=True, fill=True)
-
-            pdf.set_font("Helvetica", 'B', 9)
-            pdf.set_text_color(80, 80, 80)
-            pdf.cell(30, 5, "Payload:", border=0, fill=True)
-            pdf.set_font("Helvetica", size=9)
-            pdf.set_text_color(0, 0, 0)
-            # Truncate if too long
-            payload = a.get('details', '')[:100]
-            pdf.cell(0, 5, payload, ln=True, fill=True)
+            for label, key in [("Timestamp:", "time"), ("Attacker IP:", "ip"), ("Target IP:", "target_ip"), ("Event:", "event"), ("Payload:", "details")]:
+                pdf.set_font("Helvetica", 'B', 9)
+                pdf.set_text_color(80, 80, 80)
+                pdf.cell(30, 5, label, border=0, fill=True)
+                pdf.set_font("Helvetica", size=9)
+                pdf.set_text_color(0, 0, 0)
+                val = a.get(key, '')[:100] if key == "details" else a.get(key, '')
+                pdf.cell(0, 5, str(val), ln=True, fill=True)
 
             pdf.set_font("Helvetica", 'B', 9)
             pdf.set_text_color(80, 80, 80)
             pdf.cell(30, 5, "Verdict:", border=0, fill=True)
-            # Color code based on severity
             verdict_text = a.get('verdict', '')
             if "CRITICAL" in verdict_text:
                 pdf.set_text_color(200, 0, 0)
@@ -533,12 +514,9 @@ def export():
                 pdf.set_text_color(0, 0, 0)
             pdf.set_font("Helvetica", 'B', 9)
             pdf.cell(0, 5, verdict_text, ln=True, fill=True)
-
             pdf.set_text_color(0, 0, 0)
 
-            # Explanation – multi-line
             explanation = a.get('simple_explanation', 'No explanation available.')
-            # Clean non-Latin-1 characters
             try:
                 explanation = explanation.encode('latin-1', 'ignore').decode('latin-1')
             except:
@@ -555,18 +533,12 @@ def export():
             pdf.line(10, pdf.get_y(), 200, pdf.get_y())
             pdf.ln(2)
 
-    # -----------------------------------------------------------------
-    # FOOTER (page numbers) – handled by auto_page_break
-    # We'll add a footer on each page using a custom method
-    # but simpler: add a final line with page number
-    # Actually we can override the footer method, but we'll do a quick inline after events
     pdf.ln(10)
     pdf.set_y(-15)
     pdf.set_font("Helvetica", 'I', 8)
     pdf.set_text_color(150, 150, 150)
     pdf.cell(0, 10, f"Page {pdf.page_no()}", align='C')
 
-    # Output
     filename = f"Report_{datetime.datetime.now(MYT).strftime('%Y%m%d_%H%M%S')}.pdf"
     path = os.path.join(REPORT_FOLDER, filename)
     pdf.output(path)
@@ -581,18 +553,8 @@ def health():
         "model_files_exist": os.path.exists(model_path) and os.path.exists(rf_path),
         "load_error": model_load_error,
         "database_size": len(get_db()),
-        "groq_available": bool(os.getenv('GROQ_API_KEY'))
-    })
-
-# ============================================
-# DEBUG ROUTE – Check database content
-# ============================================
-@app.route('/debug/db')
-def debug_db():
-    db = get_db()
-    return jsonify({
-        "count": len(db),
-        "sample": db[:5]   # show first 5 entries
+        "groq_available": bool(os.getenv('GROQ_API_KEY')),
+        "telegram_available": bool(os.getenv('TELEGRAM_BOT_TOKEN') and os.getenv('TELEGRAM_CHAT_ID'))
     })
 
 # --- RENDER COMPATIBILITY ---
