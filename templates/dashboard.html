@@ -59,7 +59,7 @@
                                     <div class="col">
                                         <div class="p-3 bg-dark rounded border border-secondary">
                                             <span class="text-muted" style="font-size: 0.85em;">Total Tracked Events</span><br>
-                                            <strong class="fs-4" id="totalEvents">{{ alerts|length }}</strong>
+                                            <strong class="fs-4" id="totalEvents">0</strong>
                                         </div>
                                     </div>
                                     <div class="col">
@@ -91,7 +91,7 @@
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-dark table-hover m-0" id="logTable">
+                    <table class="table table-dark table-hover m-0">
                         <thead>
                             <tr>
                                 <th>Timestamp</th>
@@ -102,7 +102,7 @@
                             </tr>
                         </thead>
                         <tbody id="logBody">
-                            <!-- Rows rendered by JavaScript -->
+                            <!-- Rows inserted by JavaScript -->
                         </tbody>
                     </table>
                 </div>
@@ -113,48 +113,31 @@
     <script>
         let defaultSummaryHTML = "";
         let myChart = null;
-        let knownLogs = new Set();
+        let knownIds = new Set();
 
         document.addEventListener("DOMContentLoaded", function() {
             defaultSummaryHTML = document.getElementById("forensic-display").innerHTML;
             fetchData();
-            setInterval(fetchData, 5000); // refresh every 5 seconds
+            setInterval(fetchData, 5000);
         });
 
         function fetchData() {
-            // Fetch chart data and logs simultaneously
             Promise.all([
                 fetch('/api/chart-data').then(r => r.json()),
-                fetch('/api/analyze').then(r => r.json())
-            ]).then(([chartData, analyzeData]) => {
+                fetch('/api/analyze').then(r => r.json()),
+                fetch('/api/get-logs').then(r => r.json())
+            ]).then(([chartData, analyzeData, logs]) => {
                 updateChart(chartData);
-                updateTotal(analyzeData.total_attacks);
-                // Now fetch the full log list and render table
-                fetch('/')
-                    .then(r => r.text())
-                    .then(html => {
-                        // Extract table rows from HTML – we need a better way.
-                        // Instead, we'll fetch /api/logs? (but we don't have that endpoint).
-                        // Workaround: we'll use the initial Jinja rendered data embedded in the page.
-                        // But since we want real updates, we'll use a dedicated endpoint.
-                        // For now, we'll fetch the HTML and parse the table.
-                        // However, it's easier to create a new endpoint /api/logs-list.
-                        // Since we don't want to change backend, we'll keep using the initial data.
-                        // Alternative: we can store logs in a JS variable and update.
-                        // But the page reloads the entire HTML each time.
-                        // Instead, we can just reload the entire page? No, we want AJAX.
-                        // Let's add a new route in backend: /api/get-logs
-                        // I'll include it in the updated local_server.py.
-                        // For now, we'll use the initial data from the page.
-                        // I'll update the code to include a new route.
-                    });
+                document.getElementById('totalEvents').textContent = analyzeData.total_attacks;
+                updateTable(logs);
             }).catch(err => console.warn('Refresh error:', err));
         }
 
         function updateChart(data) {
             const ctx = document.getElementById('threatChart').getContext('2d');
+            const counts = data.counts;
             if (myChart) {
-                myChart.data.datasets[0].data = [data.counts.CRITICAL, data.counts.HIGH, data.counts.WARNING, data.counts.INFO];
+                myChart.data.datasets[0].data = [counts.CRITICAL, counts.HIGH, counts.WARNING, counts.INFO];
                 myChart.update();
             } else {
                 myChart = new Chart(ctx, {
@@ -162,7 +145,7 @@
                     data: {
                         labels: ['Critical', 'High', 'Warning', 'Info'],
                         datasets: [{
-                            data: [data.counts.CRITICAL, data.counts.HIGH, data.counts.WARNING, data.counts.INFO],
+                            data: [counts.CRITICAL, counts.HIGH, counts.WARNING, counts.INFO],
                             backgroundColor: ['#ff4d4d', '#fd7e14', '#ffc107', '#0dcaf0'],
                             borderWidth: 0
                         }]
@@ -176,9 +159,9 @@
                     }
                 });
             }
-            // Update insight box
-            document.getElementById('chart-insight').innerHTML = data.insight_html;
-            // Update border class
+            // Update insight
+            const insightDiv = document.getElementById('forensic-insight');
+            if (insightDiv) insightDiv.innerHTML = data.insight_html;
             const card = document.querySelector('.card.border-warning');
             if (card) {
                 card.className = card.className.replace(/border-\w+/g, '');
@@ -186,17 +169,104 @@
             }
         }
 
-        function updateTotal(total) {
-            document.getElementById('totalEvents').textContent = total;
+        function updateTable(logs) {
+            const tbody = document.getElementById('logBody');
+            if (!logs || logs.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted">No logs yet.</td></tr>`;
+                return;
+            }
+
+            logs.sort((a, b) => (a.time < b.time ? 1 : -1));
+
+            let html = '';
+            logs.forEach(log => {
+                const verdictClass = log.verdict && log.verdict.includes('CRITICAL') ? 'verdict-critical' :
+                                     log.verdict && log.verdict.includes('HIGH') ? 'verdict-high' :
+                                     log.verdict && log.verdict.includes('WARNING') ? 'verdict-warning' :
+                                     'verdict-info';
+
+                const logId = log.time + log.attacker_ip + log.details;
+                const isNew = !knownIds.has(logId);
+                if (isNew) knownIds.add(logId);
+                const rowClass = isNew ? 'log-row new-row' : 'log-row';
+
+                html += `
+                    <tr class="${rowClass}" style="cursor: pointer;"
+                        data-time="${log.time || ''}"
+                        data-attacker-ip="${log.attacker_ip || ''}"
+                        data-target-ip="${log.target_ip || ''}"
+                        data-action="${log.details || ''}"
+                        data-verdict="${log.verdict || ''}"
+                        data-reasoning="${log.reasoning || ''}"
+                        data-simple-explanation="${log.simple_explanation || 'No explanation available.'}"
+                        data-confidence="${log.confidence || 0}">
+                        <td>${log.time || ''}</td>
+                        <td><code class="text-danger">${log.attacker_ip || ''}</code></td>
+                        <td>${log.event || ''}</td>
+                        <td>${log.details || ''}</td>
+                        <td class="fw-bold ${verdictClass}">${log.verdict || ''}</td>
+                    </tr>
+                `;
+            });
+
+            tbody.innerHTML = html;
+
+            // Bind click events
+            document.querySelectorAll('.log-row').forEach(row => {
+                row.addEventListener('click', function() {
+                    document.querySelectorAll('.log-row').forEach(r => r.classList.remove('bg-secondary'));
+                    this.classList.add('bg-secondary');
+
+                    const attackerIp = this.getAttribute('data-attacker-ip');
+                    const targetIp = this.getAttribute('data-target-ip');
+                    const action = this.getAttribute('data-action');
+                    const verdict = this.getAttribute('data-verdict');
+                    const simpleExplanation = this.getAttribute('data-simple-explanation');
+                    const reasoning = this.getAttribute('data-reasoning');
+
+                    const formatList = (text) => {
+                        if (!text || text === "N/A") return "N/A";
+                        return text.split('|').map(item => `<span class="analytics-line">${item.trim()}</span>`).join('');
+                    };
+                    const reasoningHtml = formatList(reasoning);
+
+                    const forensicDisplay = document.getElementById('forensic-display');
+                    forensicDisplay.innerHTML = `
+                        <strong class='text-warning fs-5'>⚠️ Active Session Detected</strong>
+                        <div class="mt-2 text-light" style="font-size: 0.95em;">
+                            <strong>Attacker IP (Source):</strong> <code class="text-danger">${attackerIp}</code> <br>
+                            <strong>Target IP (Honeypot):</strong> <code class="text-success">${targetIp}</code> <br>
+                            <strong>Action:</strong> ${action} <br>
+                            <strong>Verdict:</strong> ${verdict} <br>
+                            
+                            <div class="mt-3 p-2 rounded reasoning-box">
+                                <strong class="text-white" style="font-size: 0.85em;">⚙️ Primary AI Conclusion:</strong> <br>
+                                <div class="text-success" style="font-size: 0.9em; margin-top: 5px;">${reasoningHtml}</div>
+                            </div>
+                            
+                            <div class="mt-2 p-2 rounded explanation-box">
+                                <strong class="text-white" style="font-size: 0.85em;">💡 AI Threat Explanation</strong> <br>
+                                <div class="explanation-text" style="margin-top: 5px;">
+                                    ${simpleExplanation}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            });
         }
 
-        // The table rendering is handled by Jinja initially.
-        // For auto-refresh, we need to fetch new logs from the server.
-        // I will add a new endpoint /api/get-logs in the backend code.
-        // For now, I'll implement a simple polling that reloads the page after 30 seconds.
-        // But that defeats the purpose.
+        function clearAnalysisView() {
+            document.getElementById("forensic-display").innerHTML = defaultSummaryHTML;
+            document.querySelectorAll(".log-row").forEach(r => r.classList.remove("bg-secondary"));
+        }
 
-        // I'll provide a cleaner solution in the final answer.
+        function clearLogs() {
+            if(confirm("Are you sure you want to clear all forensic logs?")) {
+                fetch('/api/clear', { method: 'POST' })
+                .then(response => window.location.reload());
+            }
+        }
     </script>
 </body>
 </html>
