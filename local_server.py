@@ -128,7 +128,10 @@ def send_telegram_alert(message):
 
 # --- GENERATIVE AI EXPLANATION (Groq) ---
 def generate_ai_explanation(command, classification, confidence, risk_flags, entropy_score):
-    """Use Groq's free API to generate a plain‑English explanation."""
+    """
+    Use Groq's free API to generate a plain‑English explanation.
+    Returns None if API key is missing, the call fails, or the response is empty.
+    """
     api_key = os.getenv('GROQ_API_KEY')
     if not api_key:
         return None
@@ -144,6 +147,7 @@ Complexity score: {entropy_score}
 
 Write a **complete** 3‑4 sentence explanation that a non‑technical person can understand.
 Be friendly, use analogies if helpful, and do not include technical jargon.
+Provide a full explanation – do not cut off early.
 Only return the explanation text.
 """
 
@@ -159,22 +163,21 @@ Only return the explanation text.
                 {"role": "system", "content": "You are a helpful cybersecurity assistant."},
                 {"role": "user", "content": prompt}
             ],
-            "max_tokens": 250,
+            "max_tokens": 350,
             "temperature": 0.7
         }
         response = requests.post(url, headers=headers, json=payload, timeout=15)
         if response.status_code == 200:
             result = response.json()
             explanation = result['choices'][0]['message']['content'].strip()
-            if len(explanation) > 600:
-                explanation = explanation[:597] + "..."
+            if not explanation:
+                return None
+            if len(explanation) > 800:
+                explanation = explanation[:797] + "..."
             return explanation
         else:
             print(f"⚠️ Groq API error: {response.status_code} - {response.text}")
             return None
-    except requests.exceptions.Timeout:
-        print("⚠️ Groq API timeout – using fallback.")
-        return None
     except Exception as e:
         print(f"⚠️ Groq error: {e}")
         return None
@@ -260,9 +263,9 @@ def process_command(command_input, attacker_ip="Unknown"):
 
         anchors = ", ".join([f"'{w}'" for w in top_words]) if top_words else "none"
 
-        # Try Groq AI first
+        # Try generative AI first; if fails, use static fallback
         ai_explanation = generate_ai_explanation(command_input, best, best_prob, flags, entropy)
-        if ai_explanation:
+        if ai_explanation and ai_explanation.strip():
             explanation = ai_explanation
         else:
             explanation = generate_static_explanation(best, flags, entropy)
@@ -344,7 +347,7 @@ def receive_logs():
             print(f"⚠️ Base64 decode error: {e}")
 
     if event_type == "cowrie.command.input":
-        stages = process_command(command, src_ip)  # pass attacker IP for alerts
+        stages = process_command(command, src_ip)
         for s in stages:
             db.append({
                 "time": datetime.datetime.now(MYT).strftime("%Y-%m-%d %H:%M:%S"),
