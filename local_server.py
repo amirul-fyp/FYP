@@ -105,6 +105,7 @@ print("=" * 60)
 
 # --- TELEGRAM NOTIFICATIONS ---
 def send_telegram_alert(message):
+    """Send a Telegram notification for critical threats."""
     bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
     chat_id = os.getenv('TELEGRAM_CHAT_ID')
     if not bot_token or not chat_id:
@@ -124,12 +125,6 @@ def send_telegram_alert(message):
             print(f"⚠️ Telegram error: {response.status_code} - {response.text}")
     except Exception as e:
         print(f"⚠️ Telegram send failed: {e}")
-
-@app.route('/test/telegram')
-def test_telegram():
-    message = "🚨 <b>Test Alert</b>\nThis is a test message from CyberSentinel."
-    send_telegram_alert(message)
-    return "Test alert sent! Check your Telegram."
 
 # --- GENERATIVE AI EXPLANATION (Groq) ---
 def generate_ai_explanation(command, classification, confidence, risk_flags, entropy_score):
@@ -279,6 +274,7 @@ def process_command(command_input, attacker_ip="Unknown"):
         )
 
         # --- SEND TELEGRAM ALERT FOR CRITICAL/HIGH THREATS ---
+        print(f"🔔 Processing threat: severity={severity}, command={command_input}")
         if severity in ["CRITICAL", "HIGH"]:
             alert_msg = (
                 f"🚨 <b>CyberSentinel Alert</b>\n"
@@ -291,6 +287,8 @@ def process_command(command_input, attacker_ip="Unknown"):
                 f"🔹 <b>Time:</b> {datetime.datetime.now(MYT).strftime('%Y-%m-%d %H:%M:%S')} (MYT)"
             )
             send_telegram_alert(alert_msg)
+        else:
+            print(f"ℹ️ Severity {severity} – no Telegram alert (requires HIGH or CRITICAL)")
 
         return [{
             "event": "AI Analyzed Command",
@@ -428,6 +426,11 @@ def chart():
         border = "border-success"
     return jsonify({"counts": counts, "insight_html": html, "border_class": border})
 
+@app.route('/api/get-logs')
+def get_logs():
+    db = get_db()
+    return jsonify(db)
+
 @app.route('/api/export-report')
 def export():
     db = get_db()
@@ -555,6 +558,12 @@ def health():
         "groq_available": bool(os.getenv('GROQ_API_KEY')),
         "telegram_available": bool(os.getenv('TELEGRAM_BOT_TOKEN') and os.getenv('TELEGRAM_CHAT_ID'))
     })
+
+@app.route('/test/telegram')
+def test_telegram():
+    message = "🚨 <b>Test Alert</b>\nThis is a test message from CyberSentinel."
+    send_telegram_alert(message)
+    return "Test alert sent! Check your Telegram."
 
 # --- RENDER COMPATIBILITY ---
 if __name__ == '__main__':
