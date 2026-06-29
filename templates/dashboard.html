@@ -11,7 +11,7 @@
         .card { background-color: #1e1e1e; border-color: #333; }
         .table { color: #e0e0e0; }
         .table-dark { background-color: #1e1e1e; }
-        .table-hover tbody tr:hover { background-color: #2a2a2a; color: #fff;}
+        .table-hover tbody tr:hover { background-color: #2a2a2a; color: #fff; }
         .log-row.bg-secondary { background-color: #333 !important; }
         .reasoning-box { background-color: #000; border-left: 3px solid #28a745; }
         .explanation-box { background-color: #000; border-left: 3px solid #0dcaf0; }
@@ -21,9 +21,7 @@
         .verdict-info { color: #0dcaf0 !important; }     
         .analytics-line { display: block; margin-bottom: 6px; line-height: 1.4; }
         .explanation-text { font-size: 0.95rem; line-height: 1.6; color: #d4e8f0; }
-        .log-row.new-row {
-            animation: highlight 2s ease-in-out;
-        }
+        .log-row.new-row { animation: highlight 2s ease-in-out; }
         @keyframes highlight {
             0% { background-color: rgba(0, 255, 100, 0.3); }
             100% { background-color: transparent; }
@@ -106,6 +104,8 @@
                             <!-- Rows inserted by JavaScript -->
                         </tbody>
                     </table>
+                    <!-- Fallback area if table rendering fails -->
+                    <div id="logFallback" class="p-3 text-warning" style="display: none;"></div>
                 </div>
             </div>
         </div>
@@ -128,15 +128,21 @@
                 fetch('/api/analyze?t=' + ts, { cache: 'no-store' }).then(r => r.json()),
                 fetch('/api/get-logs?t=' + ts, { cache: 'no-store' }).then(r => r.json())
             ]).then(([chartData, analyzeData, logs]) => {
+                console.log("📊 Chart data:", chartData);
+                console.log("📈 Analyze data:", analyzeData);
+                console.log("📋 Logs received:", logs);
                 updateChart(chartData);
                 document.getElementById('totalEvents').textContent = analyzeData.total_attacks;
                 renderTable(logs);
-            }).catch(err => console.warn('Refresh error:', err));
+            }).catch(err => {
+                console.error("❌ Fetch error:", err);
+                document.getElementById('logBody').innerHTML = `<tr><td colspan="5" class="text-danger">Error loading logs: ${err.message}</td></tr>`;
+            });
         }
 
         function updateChart(data) {
             const ctx = document.getElementById('threatChart').getContext('2d');
-            const counts = data.counts;
+            const counts = data.counts || { CRITICAL: 0, HIGH: 0, WARNING: 0, INFO: 0 };
             if (myChart) {
                 myChart.data.datasets[0].data = [counts.CRITICAL, counts.HIGH, counts.WARNING, counts.INFO];
                 myChart.update();
@@ -163,91 +169,102 @@
             const card = document.querySelector('.card.border-warning');
             if (card) {
                 card.className = card.className.replace(/border-\w+/g, '');
-                card.classList.add(data.border_class);
+                card.classList.add(data.border_class || 'border-info');
             }
         }
 
         function renderTable(logs) {
             const tbody = document.getElementById('logBody');
-            if (!logs || logs.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted">No logs yet.</td></tr>`;
-                return;
-            }
+            const fallback = document.getElementById('logFallback');
+            try {
+                if (!logs || !Array.isArray(logs) || logs.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted">No logs yet.</td></tr>`;
+                    fallback.style.display = 'none';
+                    return;
+                }
 
-            // Sort newest first
-            logs.sort((a, b) => (a.time < b.time ? 1 : -1));
+                // Sort newest first
+                logs.sort((a, b) => (a.time < b.time ? 1 : -1));
 
-            let html = '';
-            logs.forEach(log => {
-                const verdictClass = log.verdict && log.verdict.includes('CRITICAL') ? 'verdict-critical' :
-                                     log.verdict && log.verdict.includes('HIGH') ? 'verdict-high' :
-                                     log.verdict && log.verdict.includes('WARNING') ? 'verdict-warning' :
-                                     'verdict-info';
+                let html = '';
+                logs.forEach(log => {
+                    const verdictClass = log.verdict && log.verdict.includes('CRITICAL') ? 'verdict-critical' :
+                                         log.verdict && log.verdict.includes('HIGH') ? 'verdict-high' :
+                                         log.verdict && log.verdict.includes('WARNING') ? 'verdict-warning' :
+                                         'verdict-info';
 
-                html += `
-                    <tr class="log-row" style="cursor: pointer;"
-                        data-time="${log.time || ''}"
-                        data-attacker-ip="${log.attacker_ip || ''}"
-                        data-target-ip="${log.target_ip || ''}"
-                        data-action="${log.details || ''}"
-                        data-verdict="${log.verdict || ''}"
-                        data-reasoning="${log.reasoning || ''}"
-                        data-simple-explanation="${log.simple_explanation || 'No explanation available.'}"
-                        data-confidence="${log.confidence || 0}">
-                        <td>${log.time || ''}</td>
-                        <td><code class="text-danger">${log.attacker_ip || ''}</code></td>
-                        <td>${log.event || ''}</td>
-                        <td>${log.details || ''}</td>
-                        <td class="fw-bold ${verdictClass}">${log.verdict || ''}</td>
-                    </tr>
-                `;
-            });
-
-            tbody.innerHTML = html;
-
-            // Bind click events
-            document.querySelectorAll('.log-row').forEach(row => {
-                row.addEventListener('click', function() {
-                    document.querySelectorAll('.log-row').forEach(r => r.classList.remove('bg-secondary'));
-                    this.classList.add('bg-secondary');
-
-                    const attackerIp = this.getAttribute('data-attacker-ip');
-                    const targetIp = this.getAttribute('data-target-ip');
-                    const action = this.getAttribute('data-action');
-                    const verdict = this.getAttribute('data-verdict');
-                    const simpleExplanation = this.getAttribute('data-simple-explanation');
-                    const reasoning = this.getAttribute('data-reasoning');
-
-                    const formatList = (text) => {
-                        if (!text || text === "N/A") return "N/A";
-                        return text.split('|').map(item => `<span class="analytics-line">${item.trim()}</span>`).join('');
-                    };
-                    const reasoningHtml = formatList(reasoning);
-
-                    const forensicDisplay = document.getElementById('forensic-display');
-                    forensicDisplay.innerHTML = `
-                        <strong class='text-warning fs-5'>⚠️ Active Session Detected</strong>
-                        <div class="mt-2 text-light" style="font-size: 0.95em;">
-                            <strong>Attacker IP (Source):</strong> <code class="text-danger">${attackerIp}</code> <br>
-                            <strong>Target IP (Honeypot):</strong> <code class="text-success">${targetIp}</code> <br>
-                            <strong>Action:</strong> ${action} <br>
-                            <strong>Verdict:</strong> ${verdict} <br>
-                            
-                            <div class="mt-3 p-2 rounded reasoning-box">
-                                <strong class="text-white" style="font-size: 0.85em;">⚙️ Primary AI Conclusion:</strong> <br>
-                                <div class="text-success" style="font-size: 0.9em; margin-top: 5px;">${reasoningHtml}</div>
-                            </div>
-                            
-                            <div class="mt-2 p-2 rounded explanation-box">
-                                <strong class="text-white" style="font-size: 0.85em;">💡 AI Threat Explanation</strong> <br>
-                                <div class="explanation-text" style="margin-top: 5px;">
-                                    ${simpleExplanation}
-                                </div>
-                            </div>
-                        </div>
+                    html += `
+                        <tr class="log-row" style="cursor: pointer;"
+                            data-time="${log.time || ''}"
+                            data-attacker-ip="${log.attacker_ip || ''}"
+                            data-target-ip="${log.target_ip || ''}"
+                            data-action="${log.details || ''}"
+                            data-verdict="${log.verdict || ''}"
+                            data-reasoning="${log.reasoning || ''}"
+                            data-simple-explanation="${log.simple_explanation || 'No explanation available.'}"
+                            data-confidence="${log.confidence || 0}">
+                            <td>${log.time || ''}</td>
+                            <td><code class="text-danger">${log.attacker_ip || ''}</code></td>
+                            <td>${log.event || ''}</td>
+                            <td>${log.details || ''}</td>
+                            <td class="fw-bold ${verdictClass}">${log.verdict || ''}</td>
+                        </tr>
                     `;
                 });
-            });
+
+                tbody.innerHTML = html;
+                fallback.style.display = 'none';
+
+                // Re-bind click events
+                document.querySelectorAll('.log-row').forEach(row => {
+                    row.addEventListener('click', function() {
+                        document.querySelectorAll('.log-row').forEach(r => r.classList.remove('bg-secondary'));
+                        this.classList.add('bg-secondary');
+
+                        const attackerIp = this.getAttribute('data-attacker-ip');
+                        const targetIp = this.getAttribute('data-target-ip');
+                        const action = this.getAttribute('data-action');
+                        const verdict = this.getAttribute('data-verdict');
+                        const simpleExplanation = this.getAttribute('data-simple-explanation');
+                        const reasoning = this.getAttribute('data-reasoning');
+
+                        const formatList = (text) => {
+                            if (!text || text === "N/A") return "N/A";
+                            return text.split('|').map(item => `<span class="analytics-line">${item.trim()}</span>`).join('');
+                        };
+                        const reasoningHtml = formatList(reasoning);
+
+                        const forensicDisplay = document.getElementById('forensic-display');
+                        forensicDisplay.innerHTML = `
+                            <strong class='text-warning fs-5'>⚠️ Active Session Detected</strong>
+                            <div class="mt-2 text-light" style="font-size: 0.95em;">
+                                <strong>Attacker IP (Source):</strong> <code class="text-danger">${attackerIp}</code> <br>
+                                <strong>Target IP (Honeypot):</strong> <code class="text-success">${targetIp}</code> <br>
+                                <strong>Action:</strong> ${action} <br>
+                                <strong>Verdict:</strong> ${verdict} <br>
+                                
+                                <div class="mt-3 p-2 rounded reasoning-box">
+                                    <strong class="text-white" style="font-size: 0.85em;">⚙️ Primary AI Conclusion:</strong> <br>
+                                    <div class="text-success" style="font-size: 0.9em; margin-top: 5px;">${reasoningHtml}</div>
+                                </div>
+                                
+                                <div class="mt-2 p-2 rounded explanation-box">
+                                    <strong class="text-white" style="font-size: 0.85em;">💡 AI Threat Explanation</strong> <br>
+                                    <div class="explanation-text" style="margin-top: 5px;">
+                                        ${simpleExplanation}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                });
+
+            } catch (err) {
+                console.error("❌ renderTable error:", err);
+                tbody.innerHTML = `<tr><td colspan="5" class="text-danger">Error rendering logs: ${err.message}</td></tr>`;
+                fallback.style.display = 'block';
+                fallback.innerHTML = `<strong>Raw logs (debug):</strong><br><pre>${JSON.stringify(logs, null, 2)}</pre>`;
+            }
         }
 
         function clearAnalysisView() {
