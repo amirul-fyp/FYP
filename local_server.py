@@ -167,10 +167,10 @@ Only return the explanation text.
                 {"role": "system", "content": "You are a helpful cybersecurity assistant."},
                 {"role": "user", "content": prompt}
             ],
-            "max_tokens": 600,
+            "max_tokens": 800,          # increased
             "temperature": 0.7
         }
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        response = requests.post(url, headers=headers, json=payload, timeout=40)  # increased timeout
         if response.status_code == 200:
             result = response.json()
             explanation = result['choices'][0]['message']['content'].strip()
@@ -192,6 +192,7 @@ def generate_static_explanation(classification, risk_flags, entropy_score):
         "Persistence": "🔐 This seems like someone trying to install a hidden backdoor to keep accessing your system later. Think of it as someone leaving a spare key under the mat.",
         "Reconnaissance": "🔍 This appears to be an attacker checking out your system, like a burglar casing a house before breaking in.",
         "Routine Noise": "✅ This looks like normal system activity. It's like background noise in a busy office.",
+        "Normal": "✅ This is a normal system command. No threat detected. It's like checking your own name tag or asking the system who you are.",
         "Unknown": "⚠️ Unusual activity detected on your system. Further investigation may be needed."
     }
     base = explanations.get(classification, explanations["Unknown"])
@@ -200,6 +201,8 @@ def generate_static_explanation(classification, risk_flags, entropy_score):
         base += f" The specific risky commands detected were: {risk_text}."
     if entropy_score > 0.65:
         base += " The command looks complex and obfuscated, which is often a sign of malicious intent."
+    if not base or len(base) < 5:
+        return "This is a system command. No immediate threat detected."
     return base
 
 # --- CORE PROCESSING FUNCTION ---
