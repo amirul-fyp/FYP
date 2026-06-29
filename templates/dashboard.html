@@ -38,6 +38,7 @@
             <div>
                 <a href="/api/export-report" class="btn btn-outline-info btn-sm me-2">📥 Export PDF Report</a>
                 <button class="btn btn-outline-danger btn-sm" onclick="clearLogs()">🗑️ Clear Logs</button>
+                <button onclick="fetchData()" class="btn btn-outline-light btn-sm">🔄 Refresh</button>
             </div>
         </div>
 
@@ -113,12 +114,10 @@
     <script>
         let defaultSummaryHTML = "";
         let myChart = null;
-        let knownIds = new Set();
 
         document.addEventListener("DOMContentLoaded", function() {
             defaultSummaryHTML = document.getElementById("forensic-display").innerHTML;
             fetchData();
-            // Refresh every 3 seconds (faster)
             setInterval(fetchData, 3000);
         });
 
@@ -131,7 +130,7 @@
             ]).then(([chartData, analyzeData, logs]) => {
                 updateChart(chartData);
                 document.getElementById('totalEvents').textContent = analyzeData.total_attacks;
-                updateTable(logs);
+                renderTable(logs);
             }).catch(err => console.warn('Refresh error:', err));
         }
 
@@ -168,13 +167,14 @@
             }
         }
 
-        function updateTable(logs) {
+        function renderTable(logs) {
             const tbody = document.getElementById('logBody');
             if (!logs || logs.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted">No logs yet.</td></tr>`;
                 return;
             }
 
+            // Sort newest first
             logs.sort((a, b) => (a.time < b.time ? 1 : -1));
 
             let html = '';
@@ -184,13 +184,9 @@
                                      log.verdict && log.verdict.includes('WARNING') ? 'verdict-warning' :
                                      'verdict-info';
 
-                const logId = log.time + log.attacker_ip + log.details;
-                const isNew = !knownIds.has(logId);
-                if (isNew) knownIds.add(logId);
-                const rowClass = isNew ? 'log-row new-row' : 'log-row';
-
+                // Use a simple row – no duplicate suppression so all logs appear
                 html += `
-                    <tr class="${rowClass}" style="cursor: pointer;"
+                    <tr class="log-row" style="cursor: pointer;"
                         data-time="${log.time || ''}"
                         data-attacker-ip="${log.attacker_ip || ''}"
                         data-target-ip="${log.target_ip || ''}"

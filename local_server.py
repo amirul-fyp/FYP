@@ -137,7 +137,6 @@ def generate_ai_explanation(command, classification, confidence, risk_flags, ent
         print("⚠️ Groq API key missing")
         return None
 
-    # Detailed prompt to ensure a complete answer of at least 50 words
     prompt = f"""
 You are a cybersecurity explainer. Explain this threat in simple, plain English.
 
@@ -147,7 +146,7 @@ Confidence: {confidence}%
 Risk flags: {risk_flags}
 Complexity score: {entropy_score}
 
-Provide a clear, complete explanation of at least 50 words. Use analogies if helpful. 
+Provide a clear, complete explanation of at least 50 words. Use analogies if helpful.
 Do not include technical jargon. Ensure your explanation is fully self-contained and does not cut off early.
 Only return the explanation text.
 """
@@ -164,24 +163,20 @@ Only return the explanation text.
                 {"role": "system", "content": "You are a helpful cybersecurity assistant."},
                 {"role": "user", "content": prompt}
             ],
-            "max_tokens": 600,   # Increased to allow longer explanations
+            "max_tokens": 600,
             "temperature": 0.7
         }
-        response = requests.post(url, headers=headers, json=payload, timeout=25)
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
         if response.status_code == 200:
             result = response.json()
             explanation = result['choices'][0]['message']['content'].strip()
             if not explanation or len(explanation) < 20:
                 print(f"⚠️ Groq returned empty/short response: '{explanation}'")
                 return None
-            # No character cap – keep full explanation
             return explanation
         else:
             print(f"⚠️ Groq API error: {response.status_code} - {response.text}")
             return None
-    except requests.exceptions.Timeout:
-        print("⚠️ Groq API timeout")
-        return None
     except Exception as e:
         print(f"⚠️ Groq error: {e}")
         return None
@@ -271,7 +266,7 @@ def process_command(command_input, attacker_ip="Unknown"):
 
         anchors = ", ".join([f"'{w}'" for w in top_words]) if top_words else "none"
 
-        # Try generative AI first; if fails, use static fallback
+        # Try generative AI; if empty, use static fallback
         ai_explanation = generate_ai_explanation(command_input, best, best_prob, flags, entropy)
         if ai_explanation and ai_explanation.strip():
             explanation = ai_explanation
@@ -279,6 +274,9 @@ def process_command(command_input, attacker_ip="Unknown"):
         else:
             explanation = generate_static_explanation(best, flags, entropy)
             print("ℹ️ Used static fallback explanation")
+            # Safety net: ensure explanation is non-empty
+            if not explanation or len(explanation) < 5:
+                explanation = "✅ This is normal system activity. No threat detected."
 
         reasoning = (
             f"🎯 <b>Confidence:</b> {best_prob:.1f}%|"
@@ -446,11 +444,16 @@ def chart():
 def get_logs():
     db = get_db()
     response = jsonify(db)
-    # Prevent caching
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
     return response
+
+@app.route('/debug/db')
+def debug_db():
+    """Debug endpoint to view raw database content."""
+    db = get_db()
+    return jsonify({"count": len(db), "logs": db})
 
 @app.route('/api/export-report')
 def export():
