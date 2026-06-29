@@ -105,7 +105,6 @@ print("=" * 60)
 
 # --- TELEGRAM NOTIFICATIONS ---
 def send_telegram_alert(message):
-    """Send a Telegram notification for critical threats."""
     bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
     chat_id = os.getenv('TELEGRAM_CHAT_ID')
     if not bot_token or not chat_id:
@@ -122,7 +121,7 @@ def send_telegram_alert(message):
         if response.status_code == 200:
             print("✅ Telegram alert sent!")
         else:
-            print(f"⚠️ Telegram error: {response.status_code}")
+            print(f"⚠️ Telegram error: {response.status_code} - {response.text}")
     except Exception as e:
         print(f"⚠️ Telegram send failed: {e}")
 
