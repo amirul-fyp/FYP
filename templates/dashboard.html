@@ -87,7 +87,7 @@
         <div class="card">
             <div class="card-header border-bottom border-secondary d-flex justify-content-between align-items-center">
                 <h5 class="m-0 text-light">🔴 Real-Time Attack Vector Logs</h5>
-                <small class="text-muted">Auto‑refresh every 5 seconds</small>
+                <small class="text-muted">Auto‑refresh every 3 seconds</small>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -118,11 +118,11 @@
         document.addEventListener("DOMContentLoaded", function() {
             defaultSummaryHTML = document.getElementById("forensic-display").innerHTML;
             fetchData();
-            setInterval(fetchData, 5000);
+            // Refresh every 3 seconds (faster)
+            setInterval(fetchData, 3000);
         });
 
         function fetchData() {
-            // Add cache-busting timestamp to prevent stale data
             const ts = new Date().getTime();
             Promise.all([
                 fetch('/api/chart-data?t=' + ts).then(r => r.json()),
@@ -161,13 +161,11 @@
                     }
                 });
             }
-            // Update insight and border
             const card = document.querySelector('.card.border-warning');
             if (card) {
                 card.className = card.className.replace(/border-\w+/g, '');
                 card.classList.add(data.border_class);
             }
-            // You can also update an insight div if you have one
         }
 
         function updateTable(logs) {
@@ -177,7 +175,6 @@
                 return;
             }
 
-            // Sort by time descending (newest first)
             logs.sort((a, b) => (a.time < b.time ? 1 : -1));
 
             let html = '';
@@ -213,7 +210,7 @@
 
             tbody.innerHTML = html;
 
-            // Re-bind click events
+            // Bind click events
             document.querySelectorAll('.log-row').forEach(row => {
                 row.addEventListener('click', function() {
                     document.querySelectorAll('.log-row').forEach(r => r.classList.remove('bg-secondary'));
