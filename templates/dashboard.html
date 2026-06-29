@@ -124,9 +124,9 @@
         function fetchData() {
             const ts = new Date().getTime();
             Promise.all([
-                fetch('/api/chart-data?t=' + ts).then(r => r.json()),
-                fetch('/api/analyze?t=' + ts).then(r => r.json()),
-                fetch('/api/get-logs?t=' + ts).then(r => r.json())
+                fetch('/api/chart-data?t=' + ts, { cache: 'no-store' }).then(r => r.json()),
+                fetch('/api/analyze?t=' + ts, { cache: 'no-store' }).then(r => r.json()),
+                fetch('/api/get-logs?t=' + ts, { cache: 'no-store' }).then(r => r.json())
             ]).then(([chartData, analyzeData, logs]) => {
                 updateChart(chartData);
                 document.getElementById('totalEvents').textContent = analyzeData.total_attacks;
@@ -184,7 +184,6 @@
                                      log.verdict && log.verdict.includes('WARNING') ? 'verdict-warning' :
                                      'verdict-info';
 
-                // Use a simple row – no duplicate suppression so all logs appear
                 html += `
                     <tr class="log-row" style="cursor: pointer;"
                         data-time="${log.time || ''}"

@@ -12,6 +12,7 @@ import pickle
 import warnings
 import traceback
 import requests
+import time
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -44,8 +45,11 @@ def save_db(data):
     try:
         with open(DB_FILE, 'w') as f:
             json.dump(data, f, indent=4)
+            f.flush()
+            os.fsync(f.fileno())
+        print(f"✅ Database saved: {len(data)} entries")
     except Exception as e:
-        print(f"⚠️ Database write error: {e}")
+        print(f"❌ Database write error: {e}")
 
 # --- LOAD THE MACHINE LEARNING MODEL ---
 print("=" * 60)
@@ -266,7 +270,7 @@ def process_command(command_input, attacker_ip="Unknown"):
 
         anchors = ", ".join([f"'{w}'" for w in top_words]) if top_words else "none"
 
-        # Try generative AI; if empty, use static fallback
+        # Try Groq AI first; if fails, use static
         ai_explanation = generate_ai_explanation(command_input, best, best_prob, flags, entropy)
         if ai_explanation and ai_explanation.strip():
             explanation = ai_explanation
@@ -274,7 +278,6 @@ def process_command(command_input, attacker_ip="Unknown"):
         else:
             explanation = generate_static_explanation(best, flags, entropy)
             print("ℹ️ Used static fallback explanation")
-            # Safety net: ensure explanation is non-empty
             if not explanation or len(explanation) < 5:
                 explanation = "✅ This is normal system activity. No threat detected."
 
@@ -451,7 +454,6 @@ def get_logs():
 
 @app.route('/debug/db')
 def debug_db():
-    """Debug endpoint to view raw database content."""
     db = get_db()
     return jsonify({"count": len(db), "logs": db})
 
