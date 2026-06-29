@@ -136,6 +136,7 @@ def generate_ai_explanation(command, classification, confidence, risk_flags, ent
     if not api_key:
         return None
 
+    # A more explicit prompt to ensure a complete answer
     prompt = f"""
 You are a cybersecurity explainer. Explain this threat in simple, plain English.
 
@@ -145,9 +146,9 @@ Confidence: {confidence}%
 Risk flags: {risk_flags}
 Complexity score: {entropy_score}
 
-Write a **complete** 3‑4 sentence explanation that a non‑technical person can understand.
-Be friendly, use analogies if helpful, and do not include technical jargon.
-Provide a full explanation – do not cut off early.
+Provide a clear, complete explanation (3‑4 sentences) that a non‑technical person can understand.
+Use analogies if helpful. Do not include technical jargon.
+Make sure your explanation is at least 20 words long.
 Only return the explanation text.
 """
 
@@ -163,17 +164,19 @@ Only return the explanation text.
                 {"role": "system", "content": "You are a helpful cybersecurity assistant."},
                 {"role": "user", "content": prompt}
             ],
-            "max_tokens": 350,
+            "max_tokens": 400,  # increased
             "temperature": 0.7
         }
-        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        response = requests.post(url, headers=headers, json=payload, timeout=20)  # longer timeout
         if response.status_code == 200:
             result = response.json()
             explanation = result['choices'][0]['message']['content'].strip()
-            if not explanation:
+            if not explanation or len(explanation) < 5:
+                print(f"⚠️ Groq returned empty/short response: '{explanation}'")
                 return None
-            if len(explanation) > 800:
-                explanation = explanation[:797] + "..."
+            # Cap length to avoid display issues
+            if len(explanation) > 900:
+                explanation = explanation[:897] + "..."
             return explanation
         else:
             print(f"⚠️ Groq API error: {response.status_code} - {response.text}")
@@ -432,7 +435,12 @@ def chart():
 @app.route('/api/get-logs')
 def get_logs():
     db = get_db()
-    return jsonify(db)
+    # Return with a cache-control header to prevent browser caching
+    response = jsonify(db)
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 @app.route('/api/export-report')
 def export():

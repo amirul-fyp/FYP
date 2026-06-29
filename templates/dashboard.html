@@ -122,10 +122,12 @@
         });
 
         function fetchData() {
+            // Add cache-busting timestamp to prevent stale data
+            const ts = new Date().getTime();
             Promise.all([
-                fetch('/api/chart-data').then(r => r.json()),
-                fetch('/api/analyze').then(r => r.json()),
-                fetch('/api/get-logs').then(r => r.json())
+                fetch('/api/chart-data?t=' + ts).then(r => r.json()),
+                fetch('/api/analyze?t=' + ts).then(r => r.json()),
+                fetch('/api/get-logs?t=' + ts).then(r => r.json())
             ]).then(([chartData, analyzeData, logs]) => {
                 updateChart(chartData);
                 document.getElementById('totalEvents').textContent = analyzeData.total_attacks;
@@ -159,14 +161,13 @@
                     }
                 });
             }
-            // Update insight
-            const insightDiv = document.getElementById('forensic-insight');
-            if (insightDiv) insightDiv.innerHTML = data.insight_html;
+            // Update insight and border
             const card = document.querySelector('.card.border-warning');
             if (card) {
                 card.className = card.className.replace(/border-\w+/g, '');
                 card.classList.add(data.border_class);
             }
+            // You can also update an insight div if you have one
         }
 
         function updateTable(logs) {
@@ -176,6 +177,7 @@
                 return;
             }
 
+            // Sort by time descending (newest first)
             logs.sort((a, b) => (a.time < b.time ? 1 : -1));
 
             let html = '';
@@ -211,7 +213,7 @@
 
             tbody.innerHTML = html;
 
-            // Bind click events
+            // Re-bind click events
             document.querySelectorAll('.log-row').forEach(row => {
                 row.addEventListener('click', function() {
                     document.querySelectorAll('.log-row').forEach(r => r.classList.remove('bg-secondary'));
