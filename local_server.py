@@ -137,7 +137,7 @@ def generate_ai_explanation(command, classification, confidence, risk_flags, ent
         print("⚠️ Groq API key missing")
         return None
 
-    # Detailed prompt to ensure a complete answer
+    # Detailed prompt to ensure a complete answer of at least 50 words
     prompt = f"""
 You are a cybersecurity explainer. Explain this threat in simple, plain English.
 
@@ -147,9 +147,8 @@ Confidence: {confidence}%
 Risk flags: {risk_flags}
 Complexity score: {entropy_score}
 
-Provide a clear, complete explanation (4-5 sentences) that a non-technical person can understand.
-Use analogies if helpful. Do not include technical jargon.
-Make sure your explanation is at least 30 words long and provides a complete analysis.
+Provide a clear, complete explanation of at least 50 words. Use analogies if helpful. 
+Do not include technical jargon. Ensure your explanation is fully self-contained and does not cut off early.
 Only return the explanation text.
 """
 
@@ -165,19 +164,17 @@ Only return the explanation text.
                 {"role": "system", "content": "You are a helpful cybersecurity assistant."},
                 {"role": "user", "content": prompt}
             ],
-            "max_tokens": 500,  # Increased for longer explanations
+            "max_tokens": 600,   # Increased to allow longer explanations
             "temperature": 0.7
         }
         response = requests.post(url, headers=headers, json=payload, timeout=25)
         if response.status_code == 200:
             result = response.json()
             explanation = result['choices'][0]['message']['content'].strip()
-            if not explanation or len(explanation) < 10:
+            if not explanation or len(explanation) < 20:
                 print(f"⚠️ Groq returned empty/short response: '{explanation}'")
                 return None
-            # Cap length for display
-            if len(explanation) > 1000:
-                explanation = explanation[:997] + "..."
+            # No character cap – keep full explanation
             return explanation
         else:
             print(f"⚠️ Groq API error: {response.status_code} - {response.text}")
@@ -209,7 +206,10 @@ def generate_static_explanation(classification, risk_flags, entropy_score):
 # --- CORE PROCESSING FUNCTION ---
 def process_command(command_input, attacker_ip="Unknown"):
     clean = re.sub(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', 'IP_ADDRESS', command_input)
+    print(f"🛠️ Processing command: '{command_input}' from {attacker_ip}")
+
     if vectorizer is None or rf_model is None:
+        print("❌ AI model not loaded – returning offline response")
         return [{
             "event": "AI Offline",
             "details": command_input,
@@ -219,6 +219,7 @@ def process_command(command_input, attacker_ip="Unknown"):
             "confidence": 0,
             "classification": "Unknown"
         }]
+
     try:
         features = vectorizer.transform([clean])
         proba = rf_model.predict_proba(features)[0]
@@ -274,8 +275,10 @@ def process_command(command_input, attacker_ip="Unknown"):
         ai_explanation = generate_ai_explanation(command_input, best, best_prob, flags, entropy)
         if ai_explanation and ai_explanation.strip():
             explanation = ai_explanation
+            print("✅ Used Groq AI explanation")
         else:
             explanation = generate_static_explanation(best, flags, entropy)
+            print("ℹ️ Used static fallback explanation")
 
         reasoning = (
             f"🎯 <b>Confidence:</b> {best_prob:.1f}%|"
@@ -284,7 +287,7 @@ def process_command(command_input, attacker_ip="Unknown"):
         )
 
         # --- SEND TELEGRAM ALERT FOR CRITICAL/HIGH THREATS ---
-        print(f"🔔 Processing threat: severity={severity}, command={command_input}")
+        print(f"🔔 Severity: {severity}, command: {command_input}")
         if severity in ["CRITICAL", "HIGH"]:
             alert_msg = (
                 f"🚨 <b>CyberSentinel Alert</b>\n"
@@ -298,9 +301,9 @@ def process_command(command_input, attacker_ip="Unknown"):
             )
             send_telegram_alert(alert_msg)
         else:
-            print(f"ℹ️ Severity {severity} – no Telegram alert (requires HIGH or CRITICAL)")
+            print(f"ℹ️ Severity {severity} – no Telegram alert")
 
-        return [{
+        result = [{
             "event": "AI Analyzed Command",
             "details": command_input,
             "verdict": verdict,
@@ -309,6 +312,8 @@ def process_command(command_input, attacker_ip="Unknown"):
             "confidence": best_prob,
             "classification": best
         }]
+        print(f"✅ Command processed: {verdict}")
+        return result
     except Exception as e:
         print(f"⚠️ Processing error: {e}")
         traceback.print_exc()
@@ -369,6 +374,7 @@ def receive_logs():
                 "confidence": s.get('confidence', 0),
                 "classification": s.get('classification', 'Unknown')
             })
+            print(f"📝 Appended log: {s['verdict']} for '{command}'")
     else:
         details = str(data.get("message", "N/A"))
         verdict = "INFO: General Event"
@@ -440,6 +446,7 @@ def chart():
 def get_logs():
     db = get_db()
     response = jsonify(db)
+    # Prevent caching
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
