@@ -134,13 +134,9 @@
                 console.log("📊 Chart data:", chartData);
                 console.log("📈 Analyze data:", analyzeData);
                 console.log("📋 Logs received:", logs);
-                // Safely update total events
                 const totalEl = document.getElementById('totalEvents');
                 if (totalEl) {
                     totalEl.textContent = analyzeData.total_attacks || 0;
-                    console.log("✅ Total events updated to:", totalEl.textContent);
-                } else {
-                    console.warn("⚠️ totalEvents element not found!");
                 }
                 updateChart(chartData);
                 renderTable(logs);
@@ -194,7 +190,6 @@
                     return;
                 }
 
-                // Sort newest first
                 logs.sort((a, b) => (a.time < b.time ? 1 : -1));
 
                 let html = '';
@@ -225,7 +220,6 @@
                 if (tbody) tbody.innerHTML = html;
                 if (fallback) fallback.style.display = 'none';
 
-                // Re-bind click events
                 document.querySelectorAll('.log-row').forEach(row => {
                     row.addEventListener('click', function() {
                         document.querySelectorAll('.log-row').forEach(r => r.classList.remove('bg-secondary'));
