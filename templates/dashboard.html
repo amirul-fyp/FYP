@@ -20,7 +20,15 @@
         .verdict-warning { color: #ffc107 !important; }  
         .verdict-info { color: #0dcaf0 !important; }     
         .analytics-line { display: block; margin-bottom: 6px; line-height: 1.4; }
-        .explanation-text { font-size: 0.95rem; line-height: 1.6; color: #d4e8f0; white-space: pre-wrap; }
+        .explanation-text {
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: #d4e8f0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: none;
+            overflow: visible;
+        }
         .log-row.new-row { animation: highlight 2s ease-in-out; }
         @keyframes highlight {
             0% { background-color: rgba(0, 255, 100, 0.3); }
@@ -130,6 +138,9 @@
                 const totalEl = document.getElementById('totalEvents');
                 if (totalEl) {
                     totalEl.textContent = analyzeData.total_attacks || 0;
+                    console.log("✅ Total events updated to:", totalEl.textContent);
+                } else {
+                    console.warn("⚠️ totalEvents element not found!");
                 }
                 updateChart(chartData);
                 renderTable(logs);
