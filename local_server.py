@@ -130,11 +130,12 @@ def send_telegram_alert(message):
     except Exception as e:
         print(f"⚠️ Telegram send failed: {e}")
 
-# --- GENERATIVE AI EXPLANATION (Groq) ---
+# --- GENERATIVE AI EXPLANATION (Groq) with fallback model ---
 def generate_ai_explanation(command, classification, confidence, risk_flags, entropy_score):
     """
     Use Groq's free API to generate a plain‑English explanation.
-    Returns None if API key is missing, the call fails, or the response is empty.
+    Tries two models if the first fails or returns a short response.
+    Returns None if all attempts fail.
     """
     api_key = os.getenv('GROQ_API_KEY')
     if not api_key:
@@ -150,40 +151,41 @@ Confidence: {confidence}%
 Risk flags: {risk_flags}
 Complexity score: {entropy_score}
 
-Provide a clear, complete explanation of at least 50 words. Use analogies if helpful.
+Provide a clear, complete explanation of at least 100 words. Use analogies if helpful.
 Do not include technical jargon. Ensure your explanation is fully self-contained and does not cut off early.
 Only return the explanation text.
 """
 
-    try:
-        url = "https://api.groq.com/openai/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "model": "llama-3.1-8b-instant",
-            "messages": [
-                {"role": "system", "content": "You are a helpful cybersecurity assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            "max_tokens": 800,
-            "temperature": 0.7
-        }
-        response = requests.post(url, headers=headers, json=payload, timeout=40)
-        if response.status_code == 200:
-            result = response.json()
-            explanation = result['choices'][0]['message']['content'].strip()
-            if not explanation or len(explanation) < 20:
-                print(f"⚠️ Groq returned empty/short response: '{explanation}'")
-                return None
-            return explanation
-        else:
-            print(f"⚠️ Groq API error: {response.status_code} - {response.text}")
-            return None
-    except Exception as e:
-        print(f"⚠️ Groq error: {e}")
-        return None
+    models = ["llama-3.1-8b-instant", "mixtral-8x7b-32768"]  # fallback model
+    for model in models:
+        try:
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "You are a helpful cybersecurity assistant."},
+                    {"role": "user", "content": prompt}
+                ],
+                "max_tokens": 1200,
+                "temperature": 0.7
+            }
+            response = requests.post(url, headers=headers, json=payload, timeout=60)
+            if response.status_code == 200:
+                result = response.json()
+                explanation = result['choices'][0]['message']['content'].strip()
+                if explanation and len(explanation) >= 150:  # require at least 150 chars
+                    return explanation
+                else:
+                    print(f"⚠️ {model} returned short/empty response ({len(explanation)} chars), trying next model")
+            else:
+                print(f"⚠️ Groq API error ({model}): {response.status_code} - {response.text}")
+        except Exception as e:
+            print(f"⚠️ Groq error ({model}): {e}")
+    return None  # all models failed
 
 # --- STATIC FALLBACK EXPLANATION ---
 def generate_static_explanation(classification, risk_flags, entropy_score):
@@ -273,14 +275,14 @@ def process_command(command_input, attacker_ip="Unknown"):
 
         anchors = ", ".join([f"'{w}'" for w in top_words]) if top_words else "none"
 
-        # Try Groq AI first; if fails, use static
+        # --- Try Groq; if too short, fallback to static ---
         ai_explanation = generate_ai_explanation(command_input, best, best_prob, flags, entropy)
-        if ai_explanation and ai_explanation.strip():
+        if ai_explanation and len(ai_explanation) >= 150:
             explanation = ai_explanation
-            print("✅ Used Groq AI explanation")
+            print(f"✅ Used Groq AI explanation ({len(ai_explanation)} chars)")
         else:
             explanation = generate_static_explanation(best, flags, entropy)
-            print("ℹ️ Used static fallback explanation")
+            print("ℹ️ Used static fallback explanation (AI too short or failed)")
             if not explanation or len(explanation) < 5:
                 explanation = "✅ This is normal system activity. No threat detected."
 
@@ -331,7 +333,7 @@ def process_command(command_input, attacker_ip="Unknown"):
             "classification": "Unknown"
         }]
 
-# --- FLASK ROUTES ---
+# --- FLASK ROUTES (unchanged) ---
 @app.route('/')
 def index():
     db = get_db()
