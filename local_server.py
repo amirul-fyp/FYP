@@ -12,7 +12,6 @@ import pickle
 import warnings
 import traceback
 import requests
-import time
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -130,68 +129,6 @@ def send_telegram_alert(message):
     except Exception as e:
         print(f"⚠️ Telegram send failed: {e}")
 
-# --- GENERATIVE AI EXPLANATION (Groq) – Only for CRITICAL threats ---
-def generate_ai_explanation(command, classification, confidence, risk_flags, entropy_score):
-    """
-    Use Groq's free API to generate a plain‑English explanation.
-    Only used for CRITICAL threats. Returns None if API fails.
-    """
-    # Only use AI for CRITICAL threats
-    if classification != "Cryptojacking":
-        return None
-
-    api_key = os.getenv('GROQ_API_KEY')
-    if not api_key:
-        print("⚠️ Groq API key missing")
-        return None
-
-    prompt = f"""
-You are a cybersecurity explainer. Explain this threat in simple, plain English.
-
-Command: "{command}"
-Threat type: {classification}
-Confidence: {confidence}%
-Risk flags: {risk_flags}
-Complexity score: {entropy_score}
-
-Provide a clear, complete explanation of at least 100 words. Use analogies if helpful.
-Do not include technical jargon. Ensure your explanation is fully self-contained and does not cut off early.
-Make sure you complete your final sentence. Do not leave the explanation hanging.
-Only return the explanation text.
-"""
-
-    models = ["llama-3.1-8b-instant", "mixtral-8x7b-32768"]
-    for model in models:
-        try:
-            url = "https://api.groq.com/openai/v1/chat/completions"
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": "You are a helpful cybersecurity assistant."},
-                    {"role": "user", "content": prompt}
-                ],
-                "max_tokens": 1600,
-                "temperature": 0.7,
-                "stop": ["\n\n"]  # stop at double newline to ensure completion
-            }
-            response = requests.post(url, headers=headers, json=payload, timeout=60)
-            if response.status_code == 200:
-                result = response.json()
-                explanation = result['choices'][0]['message']['content'].strip()
-                if explanation and len(explanation) >= 200:
-                    return explanation
-                else:
-                    print(f"⚠️ {model} returned short response ({len(explanation)} chars)")
-            else:
-                print(f"⚠️ Groq API error ({model}): {response.status_code}")
-        except Exception as e:
-            print(f"⚠️ Groq error ({model}): {e}")
-    return None
-
 # --- STATIC EXPLANATIONS (Complete, never truncated) ---
 def generate_static_explanation(classification, risk_flags, entropy_score):
     explanations = {
@@ -278,14 +215,9 @@ def process_command(command_input, attacker_ip="Unknown"):
 
         anchors = ", ".join([f"'{w}'" for w in top_words]) if top_words else "none"
 
-        # --- Generate explanation: AI for CRITICAL, static for everything else ---
-        ai_explanation = generate_ai_explanation(command_input, best, best_prob, flags, entropy)
-        if ai_explanation and len(ai_explanation) >= 200:
-            explanation = ai_explanation
-            print(f"✅ Used Groq AI explanation ({len(ai_explanation)} chars)")
-        else:
-            explanation = generate_static_explanation(best, flags, entropy)
-            print("ℹ️ Used static explanation")
+        # --- Always use static explanation (complete, reliable) ---
+        explanation = generate_static_explanation(best, flags, entropy)
+        print("ℹ️ Used static explanation")
 
         reasoning = (
             f"🎯 <b>Confidence:</b> {best_prob:.1f}%|"
@@ -587,7 +519,6 @@ def health():
         "model_files_exist": os.path.exists(model_path) and os.path.exists(rf_path),
         "load_error": model_load_error,
         "database_size": len(get_db()),
-        "groq_available": bool(os.getenv('GROQ_API_KEY')),
         "telegram_available": bool(os.getenv('TELEGRAM_BOT_TOKEN') and os.getenv('TELEGRAM_CHAT_ID'))
     })
 
