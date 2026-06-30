@@ -5,3 +5,4 @@ numpy
 scikit-learn
 fpdf
 requests
+google-generativeai

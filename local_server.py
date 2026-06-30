@@ -13,6 +13,14 @@ import warnings
 import traceback
 import requests
 
+# --- Google Gemini ---
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    genai = None
+
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
@@ -106,6 +114,35 @@ else:
 
 print("=" * 60)
 
+# --- GOOGLE GEMINI SETUP ---
+def setup_gemini():
+    """Configure Gemini with API key from environment."""
+    api_key = os.getenv('GEMINI_API_KEY')
+    if not api_key:
+        print("⚠️ GEMINI_API_KEY not set – AI explanations disabled.")
+        return None
+    if not GEMINI_AVAILABLE:
+        print("⚠️ google-generativeai package not installed.")
+        return None
+    try:
+        genai.configure(api_key=api_key)
+        # Use a fast, cheap model (free tier)
+        model = genai.GenerativeModel(
+            model_name='gemini-2.0-flash',  # or 'gemini-1.5-flash'
+            generation_config={
+                'temperature': 0.7,
+                'max_output_tokens': 250,
+                'top_p': 0.95,
+            }
+        )
+        print("✅ Google Gemini (flash) loaded for AI explanations.")
+        return model
+    except Exception as e:
+        print(f"❌ Gemini setup failed: {e}")
+        return None
+
+gemini_model = setup_gemini()
+
 # --- TELEGRAM NOTIFICATIONS ---
 def send_telegram_alert(message):
     """Send a Telegram notification for critical threats."""
@@ -129,7 +166,7 @@ def send_telegram_alert(message):
     except Exception as e:
         print(f"⚠️ Telegram send failed: {e}")
 
-# --- STATIC EXPLANATIONS (Single-line, no newlines) ---
+# --- STATIC EXPLANATIONS (Complete, never truncated) ---
 def generate_static_explanation(classification, risk_flags, entropy_score):
     explanations = {
         "Cryptojacking": "🚨 This looks like someone trying to use your computer to mine cryptocurrency without permission. It's like someone secretly using your electricity to run their Bitcoin machine! The attacker is using your computer's processing power to generate digital currency for themselves, which slows down your system and increases your electricity bills.",
@@ -145,9 +182,50 @@ def generate_static_explanation(classification, risk_flags, entropy_score):
         base += f" The specific risky commands detected were: {risk_text}."
     if entropy_score > 0.65:
         base += " The command looks complex and obfuscated, which is often a sign of malicious intent."
-    # Remove any accidental newlines (just in case)
+    # Remove any accidental newlines
     base = base.replace('\n', ' ').replace('\r', ' ')
     return base
+
+# --- GENERATIVE AI EXPLANATION (Gemini) ---
+def generate_ai_explanation(command, classification, confidence, risk_flags, entropy_score):
+    """
+    Use Google Gemini to generate a plain‑English explanation.
+    Returns None if AI is unavailable or response is too short.
+    """
+    if not gemini_model:
+        return None
+
+    # Only use AI for critical threats, or you can enable for all
+    # For now, we use AI for ALL classifications (you can restrict if needed)
+    prompt = f"""
+You are a cybersecurity explainer. Explain this threat in simple, plain English.
+
+Command: "{command}"
+Threat type: {classification}
+Confidence: {confidence}%
+Risk flags: {risk_flags}
+Complexity score: {entropy_score}
+
+Provide a clear, complete explanation of at least 50 words. Use analogies if helpful.
+Do not include technical jargon. Only return the explanation text.
+"""
+
+    try:
+        response = gemini_model.generate_content(prompt)
+        if not response or not response.text:
+            print("⚠️ Gemini returned empty response")
+            return None
+        explanation = response.text.strip()
+        # Ensure response is long enough
+        if len(explanation) < 50:
+            print(f"⚠️ Gemini response too short ({len(explanation)} chars)")
+            return None
+        # Remove any accidental newlines
+        explanation = explanation.replace('\n', ' ').replace('\r', ' ')
+        return explanation
+    except Exception as e:
+        print(f"⚠️ Gemini error: {e}")
+        return None
 
 # --- CORE PROCESSING FUNCTION ---
 def process_command(command_input, attacker_ip="Unknown"):
@@ -217,8 +295,14 @@ def process_command(command_input, attacker_ip="Unknown"):
 
         anchors = ", ".join([f"'{w}'" for w in top_words]) if top_words else "none"
 
-        # --- Static explanation only ---
-        explanation = generate_static_explanation(best, flags, entropy)
+        # --- Try Gemini AI first, then fallback to static ---
+        ai_explanation = generate_ai_explanation(command_input, best, best_prob, flags, entropy)
+        if ai_explanation and len(ai_explanation) >= 50:
+            explanation = ai_explanation
+            print(f"✅ Used Gemini AI explanation ({len(ai_explanation)} chars)")
+        else:
+            explanation = generate_static_explanation(best, flags, entropy)
+            print("ℹ️ Used static explanation")
 
         reasoning = (
             f"🎯 <b>Confidence:</b> {best_prob:.1f}%|"
@@ -520,6 +604,7 @@ def health():
         "model_files_exist": os.path.exists(model_path) and os.path.exists(rf_path),
         "load_error": model_load_error,
         "database_size": len(get_db()),
+        "gemini_available": bool(gemini_model),
         "telegram_available": bool(os.getenv('TELEGRAM_BOT_TOKEN') and os.getenv('TELEGRAM_CHAT_ID'))
     })
 
