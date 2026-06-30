@@ -129,7 +129,7 @@ def send_telegram_alert(message):
     except Exception as e:
         print(f"⚠️ Telegram send failed: {e}")
 
-# --- STATIC EXPLANATIONS (Complete, never truncated) ---
+# --- STATIC EXPLANATIONS (Single-line, no newlines) ---
 def generate_static_explanation(classification, risk_flags, entropy_score):
     explanations = {
         "Cryptojacking": "🚨 This looks like someone trying to use your computer to mine cryptocurrency without permission. It's like someone secretly using your electricity to run their Bitcoin machine! The attacker is using your computer's processing power to generate digital currency for themselves, which slows down your system and increases your electricity bills.",
@@ -145,6 +145,8 @@ def generate_static_explanation(classification, risk_flags, entropy_score):
         base += f" The specific risky commands detected were: {risk_text}."
     if entropy_score > 0.65:
         base += " The command looks complex and obfuscated, which is often a sign of malicious intent."
+    # Remove any accidental newlines (just in case)
+    base = base.replace('\n', ' ').replace('\r', ' ')
     return base
 
 # --- CORE PROCESSING FUNCTION ---
@@ -215,9 +217,8 @@ def process_command(command_input, attacker_ip="Unknown"):
 
         anchors = ", ".join([f"'{w}'" for w in top_words]) if top_words else "none"
 
-        # --- Always use static explanation (complete, reliable) ---
+        # --- Static explanation only ---
         explanation = generate_static_explanation(best, flags, entropy)
-        print("ℹ️ Used static explanation")
 
         reasoning = (
             f"🎯 <b>Confidence:</b> {best_prob:.1f}%|"

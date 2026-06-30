@@ -13,22 +13,38 @@
         .table-dark { background-color: #1e1e1e; }
         .table-hover tbody tr:hover { background-color: #2a2a2a; color: #fff; }
         .log-row.bg-secondary { background-color: #333 !important; }
-        .reasoning-box { background-color: #000; border-left: 3px solid #28a745; padding: 10px 15px; margin-top: 10px; border-radius: 0 4px 4px 0; }
-        .explanation-box { background-color: #000; border-left: 3px solid #0dcaf0; padding: 10px 15px; margin-top: 10px; border-radius: 0 4px 4px 0; }
-        .verdict-critical { color: #ff4d4d !important; } 
-        .verdict-high { color: #fd7e14 !important; }     
-        .verdict-warning { color: #ffc107 !important; }  
-        .verdict-info { color: #0dcaf0 !important; }     
-        .analytics-line { display: block; margin-bottom: 6px; line-height: 1.4; }
+        .reasoning-box {
+            background-color: #000;
+            border-left: 4px solid #28a745;
+            padding: 12px 16px;
+            margin-top: 10px;
+            border-radius: 0 6px 6px 0;
+        }
+        .explanation-box {
+            background-color: #000;
+            border-left: 4px solid #0dcaf0;
+            padding: 12px 16px;
+            margin-top: 10px;
+            border-radius: 0 6px 6px 0;
+        }
+        .analytics-line {
+            display: block;
+            margin-bottom: 6px;
+            line-height: 1.4;
+        }
         .explanation-text {
             font-size: 0.95rem;
             line-height: 1.6;
             color: #d4e8f0;
-            white-space: pre-wrap;
+            white-space: normal;   /* ← changed from pre-wrap */
             word-wrap: break-word;
             max-height: none;
             overflow: visible;
         }
+        .verdict-critical { color: #ff4d4d !important; } 
+        .verdict-high { color: #fd7e14 !important; }     
+        .verdict-warning { color: #ffc107 !important; }  
+        .verdict-info { color: #0dcaf0 !important; }     
         .log-row.new-row { animation: highlight 2s ease-in-out; }
         @keyframes highlight {
             0% { background-color: rgba(0, 255, 100, 0.3); }
@@ -36,6 +52,9 @@
         }
         #forensic-display .text-light {
             word-wrap: break-word;
+        }
+        #forensic-display .detail-line {
+            margin-bottom: 4px;
         }
     </style>
 </head>
@@ -239,20 +258,22 @@
                         const forensicDisplay = document.getElementById('forensic-display');
                         if (forensicDisplay) {
                             forensicDisplay.innerHTML = `
-                                <strong class='text-warning fs-5'>⚠️ Active Session Detected</strong>
-                                <div class="mt-2 text-light" style="font-size: 0.95em;">
-                                    <strong>Attacker IP (Source):</strong> <code class="text-danger">${attackerIp}</code> <br>
-                                    <strong>Target IP (Honeypot):</strong> <code class="text-success">${targetIp}</code> <br>
-                                    <strong>Action:</strong> ${action} <br>
-                                    <strong>Verdict:</strong> ${verdict} <br>
-                                    <div class="reasoning-box">
-                                        <strong class="text-white" style="font-size: 0.85em;">⚙️ Primary AI Conclusion:</strong> <br>
-                                        <div class="text-success" style="font-size: 0.9em; margin-top: 5px;">${reasoningHtml}</div>
-                                    </div>
-                                    <div class="explanation-box">
-                                        <strong class="text-white" style="font-size: 0.85em;">💡 AI Threat Explanation</strong> <br>
-                                        <div class="explanation-text" style="margin-top: 5px;">
-                                            ${simpleExplanation}
+                                <div class="mt-2 text-light">
+                                    <strong class='text-warning fs-5'>⚠️ Active Session Detected</strong>
+                                    <div class="mt-2" style="font-size: 0.95em;">
+                                        <div class="detail-line"><strong>Attacker IP (Source):</strong> <code class="text-danger">${attackerIp}</code></div>
+                                        <div class="detail-line"><strong>Target IP (Honeypot):</strong> <code class="text-success">${targetIp}</code></div>
+                                        <div class="detail-line"><strong>Action:</strong> ${action}</div>
+                                        <div class="detail-line"><strong>Verdict:</strong> ${verdict}</div>
+                                        
+                                        <div class="reasoning-box">
+                                            <strong class="text-white" style="font-size: 0.85em;">⚙️ Primary AI Conclusion:</strong>
+                                            <div class="text-success" style="font-size: 0.9em; margin-top: 5px;">${reasoningHtml}</div>
+                                        </div>
+                                        
+                                        <div class="explanation-box">
+                                            <strong class="text-white" style="font-size: 0.85em;">💡 AI Threat Explanation</strong>
+                                            <div class="explanation-text" style="margin-top: 5px;">${simpleExplanation}</div>
                                         </div>
                                     </div>
                                 </div>
