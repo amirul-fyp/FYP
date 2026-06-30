@@ -1,4 +1,2 @@
-cowrie.json 
-SUMMARY_REPORT/ 
-cowrie.json 
-cowrie.json 
+__pycache__/ 
+*.pyc 
