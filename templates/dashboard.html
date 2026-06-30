@@ -20,7 +20,7 @@
         .verdict-warning { color: #ffc107 !important; }  
         .verdict-info { color: #0dcaf0 !important; }     
         .analytics-line { display: block; margin-bottom: 6px; line-height: 1.4; }
-        .explanation-text { font-size: 0.95rem; line-height: 1.6; color: #d4e8f0; }
+        .explanation-text { font-size: 0.95rem; line-height: 1.6; color: #d4e8f0; white-space: pre-wrap; }
         .log-row.new-row { animation: highlight 2s ease-in-out; }
         @keyframes highlight {
             0% { background-color: rgba(0, 255, 100, 0.3); }
@@ -30,7 +30,6 @@
 </head>
 <body>
     <div class="container-fluid py-4">
-        
         <div class="d-flex justify-content-between align-items-center mb-4 border-bottom border-secondary pb-3">
             <h2 class="text-light m-0">🛡️ CYBERSENTINEL: AI-Enhanced SSH Threat Analysis</h2>
             <div>
@@ -48,12 +47,10 @@
                             <h5 class="card-title text-light m-0">🧠 Live Forensic AI Analysis</h5>
                             <button onclick="clearAnalysisView()" class="btn btn-sm btn-outline-warning">↺ Clear View</button>
                         </div>
-                        
                         <div id="forensic-display">
                             <div class="mt-2 text-light">
                                 <span class='text-info fw-bold'>✅ Awaiting Log Selection.</span>
                                 <p class="text-muted mt-2" style="font-size: 0.9em;">Click any log entry below to run a deep forensic AI analysis on the specific attack vector.</p>
-                                
                                 <div class="row mt-3 text-center">
                                     <div class="col">
                                         <div class="p-3 bg-dark rounded border border-secondary">
@@ -73,7 +70,6 @@
                     </div>
                 </div>
             </div>
-            
             <div class="col-md-4">
                 <div class="card h-100">
                     <div class="card-body d-flex justify-content-center align-items-center">
@@ -104,9 +100,8 @@
                             <!-- Rows inserted by JavaScript -->
                         </tbody>
                     </table>
-                    <!-- Fallback area if table rendering fails -->
-                    <div id="logFallback" class="p-3 text-warning" style="display: none;"></div>
                 </div>
+                <div id="logFallback" class="p-3 text-warning" style="display: none;"></div>
             </div>
         </div>
     </div>
@@ -131,12 +126,17 @@
                 console.log("📊 Chart data:", chartData);
                 console.log("📈 Analyze data:", analyzeData);
                 console.log("📋 Logs received:", logs);
+                // Safely update total events
+                const totalEl = document.getElementById('totalEvents');
+                if (totalEl) {
+                    totalEl.textContent = analyzeData.total_attacks || 0;
+                }
                 updateChart(chartData);
-                document.getElementById('totalEvents').textContent = analyzeData.total_attacks;
                 renderTable(logs);
             }).catch(err => {
                 console.error("❌ Fetch error:", err);
-                document.getElementById('logBody').innerHTML = `<tr><td colspan="5" class="text-danger">Error loading logs: ${err.message}</td></tr>`;
+                const logBody = document.getElementById('logBody');
+                if (logBody) logBody.innerHTML = `<tr><td colspan="5" class="text-danger">Error loading logs: ${err.message}</td></tr>`;
             });
         }
 
@@ -178,8 +178,8 @@
             const fallback = document.getElementById('logFallback');
             try {
                 if (!logs || !Array.isArray(logs) || logs.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted">No logs yet.</td></tr>`;
-                    fallback.style.display = 'none';
+                    if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted">No logs yet.</td></tr>`;
+                    if (fallback) fallback.style.display = 'none';
                     return;
                 }
 
@@ -192,7 +192,6 @@
                                          log.verdict && log.verdict.includes('HIGH') ? 'verdict-high' :
                                          log.verdict && log.verdict.includes('WARNING') ? 'verdict-warning' :
                                          'verdict-info';
-
                     html += `
                         <tr class="log-row" style="cursor: pointer;"
                             data-time="${log.time || ''}"
@@ -212,8 +211,8 @@
                     `;
                 });
 
-                tbody.innerHTML = html;
-                fallback.style.display = 'none';
+                if (tbody) tbody.innerHTML = html;
+                if (fallback) fallback.style.display = 'none';
 
                 // Re-bind click events
                 document.querySelectorAll('.log-row').forEach(row => {
@@ -235,41 +234,44 @@
                         const reasoningHtml = formatList(reasoning);
 
                         const forensicDisplay = document.getElementById('forensic-display');
-                        forensicDisplay.innerHTML = `
-                            <strong class='text-warning fs-5'>⚠️ Active Session Detected</strong>
-                            <div class="mt-2 text-light" style="font-size: 0.95em;">
-                                <strong>Attacker IP (Source):</strong> <code class="text-danger">${attackerIp}</code> <br>
-                                <strong>Target IP (Honeypot):</strong> <code class="text-success">${targetIp}</code> <br>
-                                <strong>Action:</strong> ${action} <br>
-                                <strong>Verdict:</strong> ${verdict} <br>
-                                
-                                <div class="mt-3 p-2 rounded reasoning-box">
-                                    <strong class="text-white" style="font-size: 0.85em;">⚙️ Primary AI Conclusion:</strong> <br>
-                                    <div class="text-success" style="font-size: 0.9em; margin-top: 5px;">${reasoningHtml}</div>
-                                </div>
-                                
-                                <div class="mt-2 p-2 rounded explanation-box">
-                                    <strong class="text-white" style="font-size: 0.85em;">💡 AI Threat Explanation</strong> <br>
-                                    <div class="explanation-text" style="margin-top: 5px;">
-                                        ${simpleExplanation}
+                        if (forensicDisplay) {
+                            forensicDisplay.innerHTML = `
+                                <strong class='text-warning fs-5'>⚠️ Active Session Detected</strong>
+                                <div class="mt-2 text-light" style="font-size: 0.95em;">
+                                    <strong>Attacker IP (Source):</strong> <code class="text-danger">${attackerIp}</code> <br>
+                                    <strong>Target IP (Honeypot):</strong> <code class="text-success">${targetIp}</code> <br>
+                                    <strong>Action:</strong> ${action} <br>
+                                    <strong>Verdict:</strong> ${verdict} <br>
+                                    <div class="mt-3 p-2 rounded reasoning-box">
+                                        <strong class="text-white" style="font-size: 0.85em;">⚙️ Primary AI Conclusion:</strong> <br>
+                                        <div class="text-success" style="font-size: 0.9em; margin-top: 5px;">${reasoningHtml}</div>
+                                    </div>
+                                    <div class="mt-2 p-2 rounded explanation-box">
+                                        <strong class="text-white" style="font-size: 0.85em;">💡 AI Threat Explanation</strong> <br>
+                                        <div class="explanation-text" style="margin-top: 5px;">
+                                            ${simpleExplanation}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        `;
+                            `;
+                        }
                     });
                 });
 
             } catch (err) {
                 console.error("❌ renderTable error:", err);
-                tbody.innerHTML = `<tr><td colspan="5" class="text-danger">Error rendering logs: ${err.message}</td></tr>`;
-                fallback.style.display = 'block';
-                fallback.innerHTML = `<strong>Raw logs (debug):</strong><br><pre>${JSON.stringify(logs, null, 2)}</pre>`;
+                if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="text-danger">Error rendering logs: ${err.message}</td></tr>`;
+                if (fallback) {
+                    fallback.style.display = 'block';
+                    fallback.innerHTML = `<strong>Raw logs (debug):</strong><br><pre>${JSON.stringify(logs, null, 2)}</pre>`;
+                }
             }
         }
 
         function clearAnalysisView() {
-            document.getElementById("forensic-display").innerHTML = defaultSummaryHTML;
-            document.querySelectorAll(".log-row").forEach(r => r.classList.remove("bg-secondary"));
+            const forensicDisplay = document.getElementById('forensic-display');
+            if (forensicDisplay) forensicDisplay.innerHTML = defaultSummaryHTML;
+            document.querySelectorAll('.log-row').forEach(r => r.classList.remove('bg-secondary'));
         }
 
         function clearLogs() {

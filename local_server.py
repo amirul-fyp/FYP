@@ -167,10 +167,10 @@ Only return the explanation text.
                 {"role": "system", "content": "You are a helpful cybersecurity assistant."},
                 {"role": "user", "content": prompt}
             ],
-            "max_tokens": 800,          # increased
+            "max_tokens": 800,
             "temperature": 0.7
         }
-        response = requests.post(url, headers=headers, json=payload, timeout=40)  # increased timeout
+        response = requests.post(url, headers=headers, json=payload, timeout=40)
         if response.status_code == 200:
             result = response.json()
             explanation = result['choices'][0]['message']['content'].strip()
