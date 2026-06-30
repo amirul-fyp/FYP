@@ -131,14 +131,11 @@ def send_telegram_alert(message):
 
 # --- GENERATIVE AI EXPLANATION (OpenRouter) ---
 def generate_ai_explanation(command, classification, confidence, risk_flags, entropy_score):
-    """
-    Use OpenRouter's free API to generate a plain‑English explanation.
-    Returns None if API key missing, call fails, or response too short.
-    """
     api_key = os.getenv('OPENROUTER_API_KEY')
     if not api_key:
-        print("⚠️ OpenRouter API key missing")
-        return None
+        print("⚠️ OpenRouter API key missing")   # ✅ Indented 4 spaces
+        return None                               # ✅ Indented 4 spaces
+    # ... rest of function
 
     prompt = f"""
 You are a cybersecurity explainer. Explain this threat in simple, plain English.
